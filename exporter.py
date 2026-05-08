@@ -110,6 +110,20 @@ def _parse_csv(data: bytes) -> list[list[str]]:
     return list(csv.reader(io.StringIO(text)))
 
 
+def _label_plus_ones(rows: list[list[str]]) -> list[list[str]]:
+    if len(rows) < 2:
+        return rows
+    last_first_name = ""
+    for row in rows[1:]:
+        first = row[0].strip() if len(row) > 0 and row[0] else ""
+        last = row[1].strip() if len(row) > 1 and row[1] else ""
+        if first:
+            last_first_name = first
+        elif not last and last_first_name:
+            row[0] = f"{last_first_name}'s Guest"
+    return rows
+
+
 def _write_rows(spreadsheet: gspread.Spreadsheet, tab_name: str, rows: list[list[str]]) -> None:
     n_cols = max((len(r) for r in rows), default=1)
     n_rows = max(len(rows), 1)
@@ -141,6 +155,7 @@ def upload_to_sheets(
     keep_days: int,
 ) -> tuple[int, str, int]:
     rows = _parse_csv(csv_bytes)
+    _label_plus_ones(rows)
     guest_count = max(len(rows) - 1, 0)
 
     client = gspread.service_account(filename=credentials_path)
