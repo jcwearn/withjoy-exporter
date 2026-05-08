@@ -125,6 +125,19 @@ def _label_plus_ones(rows: list[list[str]]) -> list[list[str]]:
     return rows
 
 
+def _rows_equal(a: list[list[str]], b: list[list[str]]) -> bool:
+    if len(a) != len(b):
+        return False
+    cols = max(
+        max((len(r) for r in a), default=0),
+        max((len(r) for r in b), default=0),
+    )
+    for ra, rb in zip(a, b):
+        if ra + [""] * (cols - len(ra)) != rb + [""] * (cols - len(rb)):
+            return False
+    return True
+
+
 def _write_rows(spreadsheet: gspread.Spreadsheet, tab_name: str, rows: list[list[str]]) -> None:
     n_cols = max((len(r) for r in rows), default=1)
     n_rows = max(len(rows), 1)
@@ -155,7 +168,7 @@ def upload_to_sheets(
     latest_tab: str,
     timezone: str,
     keep_days: int,
-) -> tuple[int, str, int]:
+) -> tuple[int, str, int, bool]:
     rows = _parse_csv(csv_bytes)
     _label_plus_ones(rows)
     guest_count = max(len(rows) - 1, 0)
@@ -165,11 +178,19 @@ def upload_to_sheets(
 
     today = datetime.now(ZoneInfo(timezone)).strftime("%Y-%m-%d")
 
+    try:
+        existing_rows = spreadsheet.worksheet(latest_tab).get_all_values()
+    except gspread.WorksheetNotFound:
+        existing_rows = None
+
+    if existing_rows is not None and _rows_equal(existing_rows, rows):
+        return guest_count, today, 0, False
+
     _write_rows(spreadsheet, latest_tab, rows)
     _write_rows(spreadsheet, today, rows)
     pruned = _prune_history(spreadsheet, keep_days)
 
-    return guest_count, today, pruned
+    return guest_count, today, pruned, True
 
 
 def main() -> int:
@@ -186,13 +207,16 @@ def main() -> int:
         keep_days = int(os.environ.get("HISTORY_KEEP_DAYS", "5"))
 
         csv_bytes = download_csv(username, password, guest_list_url)
-        guest_count, today, pruned = upload_to_sheets(
+        guest_count, today, pruned, changed = upload_to_sheets(
             csv_bytes, sheet_id, credentials_path, latest_tab, timezone, keep_days
         )
-        print(
-            f"Exported {guest_count} guests → tab '{latest_tab}' + tab '{today}'. "
-            f"Pruned {pruned} old tabs."
-        )
+        if changed:
+            print(
+                f"Exported {guest_count} guests → tab '{latest_tab}' + tab '{today}'. "
+                f"Pruned {pruned} old tabs."
+            )
+        else:
+            print(f"No changes since last run ({guest_count} guests). Skipped sheet update.")
         return 0
     except ExporterError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
