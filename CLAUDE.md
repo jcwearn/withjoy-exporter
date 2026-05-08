@@ -40,6 +40,7 @@ For debug screenshots, add `-e DEBUG=1 -v "$(pwd)/debug:/tmp/debug"`.
 ## Gotchas
 
 - **Resize before update on existing tabs** (commit 9b540d3). `worksheet.clear()` preserves grid dimensions. If the existing `latest` tab is narrower than the new data, `worksheet.update()` silently broadcasts the first column's value across all columns instead of writing rows left-to-right. `_write_rows()` calls `worksheet.resize(rows=n_rows, cols=n_cols)` before `update()` for this reason. Don't remove it. Newly-created dated tabs are unaffected because `add_worksheet(rows, cols)` sizes them at creation time.
+- **Pad rows to a rectangular shape before `update()`.** Same failure mode as the resize gotcha, but per-row. WithJoy's CSV strips trailing empty fields, so `csv.reader` returns ragged rows (e.g. a plus-one row with only 14 of 22 cells). `gspread.update()` does not pad them, and on a reused worksheet the API broadcasts the row's leading value across the wider grid. `_write_rows()` runs `gspread.utils.fill_gaps(rows, rows=n_rows, cols=n_cols)` before `update()` for this reason. Don't remove it.
 - **MFA on the WithJoy bot account will hang the run.** The `LoginFailed` error message in `exporter.py` already says this — keep it.
 - **`.har` files in the repo root** are local debug captures (one is ~23MB). They're not source. Leave them alone; they're gitignored.
 

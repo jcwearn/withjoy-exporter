@@ -8,6 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import gspread
+from gspread.utils import fill_gaps
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
@@ -134,7 +135,8 @@ def _write_rows(spreadsheet: gspread.Spreadsheet, tab_name: str, rows: list[list
     except gspread.WorksheetNotFound:
         worksheet = spreadsheet.add_worksheet(title=tab_name, rows=n_rows, cols=n_cols)
     if rows:
-        worksheet.update(values=rows, range_name="A1")
+        padded = fill_gaps(rows, rows=n_rows, cols=n_cols)
+        worksheet.update(values=padded, range_name="A1")
 
 
 def _prune_history(spreadsheet: gspread.Spreadsheet, keep: int) -> int:
