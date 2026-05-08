@@ -77,7 +77,10 @@ def download_csv(username: str, password: str, guest_list_url: str) -> bytes:
                     "If Auth0 is flagging the headless run, see the debug screenshot."
                 )
 
-            page.goto(guest_list_url, wait_until="networkidle", timeout=60_000)
+            try:
+                page.goto(guest_list_url, wait_until="networkidle", timeout=60_000)
+            except PlaywrightTimeout:
+                pass
 
             if "auth0" in page.url or "/login" in page.url:
                 _dump_debug(page, "session_lost")
