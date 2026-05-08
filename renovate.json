@@ -1,3 +1,14 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json"
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "addLabels": ["release:patch"],
+  "packageRules": [
+    {
+      "matchDepNames": ["playwright", "mcr.microsoft.com/playwright/python"],
+      "groupName": "playwright"
+    }
+  ]
 }
