@@ -111,12 +111,14 @@ def _parse_csv(data: bytes) -> list[list[str]]:
 
 
 def _write_rows(spreadsheet: gspread.Spreadsheet, tab_name: str, rows: list[list[str]]) -> None:
+    n_cols = max((len(r) for r in rows), default=1)
+    n_rows = max(len(rows), 1)
     try:
         worksheet = spreadsheet.worksheet(tab_name)
         worksheet.clear()
+        worksheet.resize(rows=n_rows, cols=n_cols)
     except gspread.WorksheetNotFound:
-        cols = max((len(r) for r in rows), default=1)
-        worksheet = spreadsheet.add_worksheet(title=tab_name, rows=max(len(rows), 1), cols=max(cols, 1))
+        worksheet = spreadsheet.add_worksheet(title=tab_name, rows=n_rows, cols=n_cols)
     if rows:
         worksheet.update(values=rows, range_name="A1")
 
