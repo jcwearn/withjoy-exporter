@@ -1,5 +1,8 @@
 # WithJoy Exporter
 
+[![Build Image](https://github.com/jcwearn/withjoy-exporter/actions/workflows/build-image.yml/badge.svg)](https://github.com/jcwearn/withjoy-exporter/actions/workflows/build-image.yml)
+[![Release](https://github.com/jcwearn/withjoy-exporter/actions/workflows/release.yml/badge.svg)](https://github.com/jcwearn/withjoy-exporter/actions/workflows/release.yml)
+
 A daily-cron-friendly Docker image that exports your [WithJoy](https://withjoy.com) guest list to a Google Sheet, with a "latest" tab plus rolling daily history snapshots.
 
 ## How it works
