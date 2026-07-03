@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY exporter.py .
+COPY exporter.py web.py ./
 
 ENTRYPOINT ["python", "exporter.py"]

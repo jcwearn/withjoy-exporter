@@ -6,10 +6,13 @@ Orientation for Claude Code working in this repo. See `README.md` for the user-f
 
 Daily-cron Docker tool that exports a WithJoy event's guest list to Google Sheets. WithJoy has no public API, so the script drives the real UI with headless Chromium (Playwright): logs in via Auth0, clicks **Export All Guests**, intercepts the CSV, then pushes it to Sheets via a service account. Maintains a `latest` tab plus dated `YYYY-MM-DD` history tabs, pruning past `HISTORY_KEEP_DAYS`.
 
+The image also ships a manual-trigger web UI (`web.py`) for on-demand runs in Kubernetes.
+
 ## Layout
 
-Single source file: `exporter.py`. No tests, no package, no Makefile.
+Two source files, no package, no Makefile.
 
+`exporter.py` — the export itself (default ENTRYPOINT):
 - `main()` — env validation + orchestration
 - `download_csv()` — Playwright login + export-button click + CSV byte capture
 - `upload_to_sheets()` — orchestrates `_write_rows` for `latest` and today's tab, then prunes
@@ -17,9 +20,16 @@ Single source file: `exporter.py`. No tests, no package, no Makefile.
 - `_prune_history()` — deletes dated tabs older than `HISTORY_KEEP_DAYS`
 - `_dump_debug()` — screenshot + HTML dump on failure (or every step when `DEBUG=1`)
 
+`web.py` — Flask trigger page, k8s-only (run with `command: ["python", "web.py"]`):
+- `GET /` — button + status page; `GET /api/status` — latest Job summary; `POST /api/trigger` — creates a Job from the CronJob template (409 if one is active)
+- Config: `NAMESPACE`, `CRONJOB_NAME` (both default `withjoy-exporter`), `PORT` (8080)
+- Needs a ServiceAccount with `get` on the CronJob and `get`/`list`/`create` on Jobs
+
+`test_web.py` — pytest suite for `web.py` (mocked k8s client). The Playwright path has no tests; verify via Docker.
+
 ## How to run
 
-Docker only — there is no `pip install` / direct-python path; Playwright browser binaries come from the base image.
+The exporter is Docker only — there is no `pip install` / direct-python path; Playwright browser binaries come from the base image.
 
 ```bash
 docker build -t withjoy-exporter .
@@ -27,6 +37,13 @@ docker run --rm --env-file .env -v "$(pwd)/secrets:/secrets:ro" withjoy-exporter
 ```
 
 For debug screenshots, add `-e DEBUG=1 -v "$(pwd)/debug:/tmp/debug"`.
+
+Tests run directly:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Config
 
@@ -46,7 +63,7 @@ For debug screenshots, add `-e DEBUG=1 -v "$(pwd)/debug:/tmp/debug"`.
 
 ## Verification
 
-There's no test suite. To verify changes end-to-end:
+`pytest` covers `web.py` only. To verify exporter changes end-to-end:
 
 1. `docker build -t withjoy-exporter .`
 2. Run against a test sheet/event with `DEBUG=1`; inspect `./debug/*.png` for any failures.
@@ -55,6 +72,6 @@ There's no test suite. To verify changes end-to-end:
 ## CI
 
 `.github/workflows/`:
-- `build-image.yml` — PR validation; `docker build` only, no push.
+- `build-image.yml` — PR validation; runs `pytest` and a `docker build` (no push).
 - `release.yml` — on merged PR with a `release:patch|minor|major` label, bumps semver, tags, and pushes to GHCR.
 - `require-release-label.yml` — enforces the release label on PRs to main.
