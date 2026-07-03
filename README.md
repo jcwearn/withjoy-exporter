@@ -13,6 +13,7 @@ WithJoy doesn't expose a server-side export endpoint — its **Export All Guests
 2. Navigates to your guest list page and clicks **Export All Guests**
 3. Intercepts the resulting CSV download
 4. Pushes it to a Google Sheet using a service account:
+   - Expands the `Tags` column: each unique tag becomes an appended `<tag> (tag)` column (alphabetical) with `1`/`0` values, so guests can be filtered and counted per tag
    - Overwrites a `latest` tab on every run
    - Creates a dated tab (`YYYY-MM-DD`) for history
    - Prunes dated tabs beyond `HISTORY_KEEP_DAYS` (default 5)

@@ -15,6 +15,7 @@ Two source files, no package, no Makefile.
 `exporter.py` — the export itself (default ENTRYPOINT):
 - `main()` — env validation + orchestration
 - `download_csv()` — Playwright login + export-button click + CSV byte capture
+- `_expand_tags()` — appends one `<tag> (tag)` column per unique tag (alphabetical, int 1/0); finds the tags column by header name
 - `upload_to_sheets()` — orchestrates `_write_rows` for `latest` and today's tab, then prunes
 - `_write_rows()` — writes a single tab; **must `resize()` before `update()`** (see Gotchas)
 - `_prune_history()` — deletes dated tabs older than `HISTORY_KEEP_DAYS`
@@ -25,7 +26,7 @@ Two source files, no package, no Makefile.
 - Config: `NAMESPACE`, `CRONJOB_NAME` (both default `withjoy-exporter`), `PORT` (8080)
 - Needs a ServiceAccount with `get` on the CronJob and `get`/`list`/`create` on Jobs
 
-`test_web.py` — pytest suite for `web.py` (mocked k8s client). The Playwright path has no tests; verify via Docker.
+`test_web.py` — pytest suite for `web.py` (mocked k8s client). `test_exporter.py` — pure-function tests for the CSV transforms in `exporter.py`. The Playwright path has no tests; verify via Docker.
 
 ## How to run
 
@@ -63,7 +64,7 @@ pytest
 
 ## Verification
 
-`pytest` covers `web.py` only. To verify exporter changes end-to-end:
+`pytest` covers `web.py` and the pure CSV transforms in `exporter.py` (no Playwright/gspread). To verify exporter changes end-to-end:
 
 1. `docker build -t withjoy-exporter .`
 2. Run against a test sheet/event with `DEBUG=1`; inspect `./debug/*.png` for any failures.

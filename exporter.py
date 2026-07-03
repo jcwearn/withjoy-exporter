@@ -128,6 +128,37 @@ def _label_plus_ones(rows: list[list[str]]) -> list[list[str]]:
     return rows
 
 
+def _expand_tags(rows: list[list[str]]) -> list[list[str]]:
+    if len(rows) < 2:
+        return rows
+    header = rows[0]
+    tags_idx = next(
+        (i for i, name in enumerate(header) if name.strip().lower() == "tags"), None
+    )
+    if tags_idx is None:
+        return rows
+
+    row_tags: list[set[str]] = []
+    all_tags: set[str] = set()
+    for row in rows[1:]:
+        cell = row[tags_idx] if len(row) > tags_idx else ""
+        tags = {t.strip() for t in cell.split(",") if t.strip()}
+        row_tags.append(tags)
+        all_tags |= tags
+
+    if not all_tags:
+        return rows
+
+    sorted_tags = sorted(all_tags, key=str.lower)
+    base_cols = max(len(r) for r in rows)
+    header += [""] * (base_cols - len(header))
+    header += [f"{tag} (tag)" for tag in sorted_tags]
+    for row, tags in zip(rows[1:], row_tags):
+        row += [""] * (base_cols - len(row))
+        row += [1 if tag in tags else 0 for tag in sorted_tags]
+    return rows
+
+
 def _rows_equal(a: list[list[str]], b: list[list[str]]) -> bool:
     if len(a) != len(b):
         return False
@@ -136,7 +167,9 @@ def _rows_equal(a: list[list[str]], b: list[list[str]]) -> bool:
         max((len(r) for r in b), default=0),
     )
     for ra, rb in zip(a, b):
-        if ra + [""] * (cols - len(ra)) != rb + [""] * (cols - len(rb)):
+        pa = [str(c) for c in ra] + [""] * (cols - len(ra))
+        pb = [str(c) for c in rb] + [""] * (cols - len(rb))
+        if pa != pb:
             return False
     return True
 
@@ -174,6 +207,7 @@ def upload_to_sheets(
 ) -> tuple[int, str, int, bool]:
     rows = _parse_csv(csv_bytes)
     _label_plus_ones(rows)
+    _expand_tags(rows)
     guest_count = max(len(rows) - 1, 0)
 
     client = gspread.service_account(filename=credentials_path)
