@@ -133,6 +133,27 @@ ghcr.io/jcwearn/withjoy-exporter:sha-<commit>
 
 Pull from any of those tags as a `CronJob` image. Mount the GCP service account JSON as a `Secret` volume and the WithJoy credentials + Sheet ID as `Secret` env vars. Concrete manifests are out of scope for this repo.
 
+## Manual trigger web UI
+
+The same image also ships `web.py`, a small Flask app that serves a one-button page to trigger an export on demand when running in Kubernetes. It creates a `Job` from the existing `CronJob`'s template via the Kubernetes API and shows the latest run's status (scheduled or manual). Run it as a separate `Deployment` with the container command overridden to `["python", "web.py"]` and a ServiceAccount that can `get` the CronJob and `get`/`list`/`create` Jobs in the namespace.
+
+| Variable       | Default            | Description                                  |
+| -------------- | ------------------ | -------------------------------------------- |
+| `NAMESPACE`    | `withjoy-exporter` | Namespace containing the CronJob             |
+| `CRONJOB_NAME` | `withjoy-exporter` | CronJob whose template manual runs are built from |
+| `PORT`         | `8080`             | Port the web server listens on               |
+
+A trigger is rejected with `409` while another export Job is still running.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The tests cover the web app's status/trigger logic with a mocked Kubernetes client; the Playwright export path is verified via Docker (see Running locally).
+
 ## Troubleshooting
 
 - **`Login did not leave the auth flow`** — bad credentials, MFA enabled on the account, or Auth0 is rate-limiting / showing a CAPTCHA. Check `debug/login_failed.png`.
