@@ -159,6 +159,33 @@ def _expand_tags(rows: list[list[str]]) -> list[list[str]]:
     return rows
 
 
+def _aggregate_golkonda(rows: list[list[str]]) -> list[list[str]]:
+    if len(rows) < 2:
+        return rows
+    header = rows[0]
+    covered_idx = next(
+        (i for i, name in enumerate(header)
+         if name.strip().lower() == "golkonda guest covered"), None
+    )
+    own_idx = next(
+        (i for i, name in enumerate(header)
+         if name.strip().lower() == "golkonda guest own"), None
+    )
+    if covered_idx is None or own_idx is None:
+        return rows
+
+    insert_pos = own_idx + 1
+    base_cols = max(len(r) for r in rows)
+    header += [""] * (base_cols - len(header))
+    header.insert(insert_pos, "golkonda aggregated")
+    for row in rows[1:]:
+        row += [""] * (base_cols - len(row))
+        covered = row[covered_idx]
+        own = row[own_idx]
+        row.insert(insert_pos, covered if covered.strip() else own)
+    return rows
+
+
 def _rows_equal(a: list[list[str]], b: list[list[str]]) -> bool:
     if len(a) != len(b):
         return False
@@ -207,6 +234,7 @@ def upload_to_sheets(
 ) -> tuple[int, str, int, bool]:
     rows = _parse_csv(csv_bytes)
     _label_plus_ones(rows)
+    _aggregate_golkonda(rows)
     _expand_tags(rows)
     guest_count = max(len(rows) - 1, 0)
 
