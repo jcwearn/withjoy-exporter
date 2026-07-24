@@ -68,11 +68,6 @@ jobs:
           echo "major_minor=v${MAJOR}.${MINOR}" >> "$GITHUB_OUTPUT"
           echo "Next version: $NEXT"
 
-      - name: Create git tag
-        run: |
-          git tag "${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
-
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c # v4
@@ -91,7 +86,12 @@ jobs:
             ghcr.io/jcwearn/withjoy-exporter:${{ steps.version.outputs.major_minor }}
             ghcr.io/jcwearn/withjoy-exporter:sha-${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
+
+      - name: Create git tag
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Create GitHub Release
         env:
