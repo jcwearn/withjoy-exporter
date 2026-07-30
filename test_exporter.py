@@ -77,6 +77,72 @@ def test_expand_tags_no_tags_anywhere_is_noop():
     assert rows == [_header(), ["Alice", "Smith", "", "yes"]]
 
 
+def _golkonda_header():
+    return ["First", "Last", "golkonda guest covered", "golkonda guest own"]
+
+
+def test_aggregate_golkonda_coalesces_source_values():
+    rows = [
+        _golkonda_header(),
+        ["Alice", "Smith", "2", ""],
+        ["Bob", "Jones", "", "3"],
+        ["Cara", "Lee", "", ""],
+    ]
+    exporter._aggregate_golkonda(rows)
+    assert rows[0] == ["First", "Last", "golkonda guest covered", "golkonda guest own", "golkonda aggregated"]
+    assert rows[1] == ["Alice", "Smith", "2", "", "2"]
+    assert rows[2] == ["Bob", "Jones", "", "3", "3"]
+    assert rows[3] == ["Cara", "Lee", "", "", ""]
+
+
+def test_aggregate_golkonda_inserts_after_own_column():
+    rows = [
+        ["First", "golkonda guest own", "golkonda guest covered", "Last"],
+        ["Alice", "", "4", "Smith"],
+    ]
+    exporter._aggregate_golkonda(rows)
+    assert rows[0] == ["First", "golkonda guest own", "golkonda aggregated", "golkonda guest covered", "Last"]
+    assert rows[1] == ["Alice", "", "4", "4", "Smith"]
+
+
+def test_aggregate_golkonda_covered_wins_when_both_present():
+    rows = [
+        _golkonda_header(),
+        ["Alice", "Smith", "1", "9"],
+    ]
+    exporter._aggregate_golkonda(rows)
+    assert rows[1] == ["Alice", "Smith", "1", "9", "1"]
+
+
+def test_aggregate_golkonda_pads_ragged_rows():
+    rows = [
+        _golkonda_header(),
+        ["Alice", "Smith", "2"],
+        ["Bob"],
+    ]
+    exporter._aggregate_golkonda(rows)
+    assert rows[1] == ["Alice", "Smith", "2", "", "2"]
+    assert rows[2] == ["Bob", "", "", "", ""]
+
+
+def test_aggregate_golkonda_missing_column_is_noop():
+    rows = [
+        ["First", "Last", "golkonda guest covered"],
+        ["Alice", "Smith", "2"],
+    ]
+    exporter._aggregate_golkonda(rows)
+    assert rows == [
+        ["First", "Last", "golkonda guest covered"],
+        ["Alice", "Smith", "2"],
+    ]
+
+
+def test_aggregate_golkonda_header_only_is_noop():
+    rows = [_golkonda_header()]
+    exporter._aggregate_golkonda(rows)
+    assert rows == [_golkonda_header()]
+
+
 def test_rows_equal_treats_int_and_str_cells_as_equal():
     assert exporter._rows_equal([["Alice", 1, 0]], [["Alice", "1", "0"]])
 
