@@ -136,7 +136,15 @@ Pull from any of those tags as a `CronJob` image. Mount the GCP service account 
 
 ## Manual trigger web UI
 
-The same image also ships `web.py`, a small Flask app that serves a one-button page to trigger an export on demand when running in Kubernetes. It creates a `Job` from the existing `CronJob`'s template via the Kubernetes API and shows the latest run's status (scheduled or manual). Run it as a separate `Deployment` with the container command overridden to `["python", "web.py"]` and a ServiceAccount that can `get` the CronJob and `get`/`list`/`create` Jobs in the namespace.
+The same image also ships `web.py`, a small Flask app that serves a trigger page for on-demand runs when running in Kubernetes. Run it as a separate `Deployment` with the container command overridden to `["python", "web.py"]` and a ServiceAccount that can `get` the CronJob and `get`/`list`/`create` Jobs in the namespace.
+
+It offers three actions:
+
+- **Run export** — creates a `Job` from the existing `CronJob`'s template via the Kubernetes API.
+- **Sync schedule** — dispatches the `Refresh schedule index` workflow in the wedding-site repo, which reads the sheet this exporter writes and rebuilds the site's schedule index.
+- **Run both** — runs the export, then dispatches the workflow **only if the export succeeded**. A failed export would otherwise republish the schedule from a stale or half-written sheet.
+
+The page polls for status and reports the export Job and the workflow run separately, with a link to the run on GitHub.
 
 | Variable       | Default            | Description                                  |
 | -------------- | ------------------ | -------------------------------------------- |
@@ -144,7 +152,24 @@ The same image also ships `web.py`, a small Flask app that serves a one-button p
 | `CRONJOB_NAME` | `withjoy-exporter` | CronJob whose template manual runs are built from |
 | `PORT`         | `8080`             | Port the web server listens on               |
 
-A trigger is rejected with `409` while another export Job is still running.
+A trigger is rejected with `409` while another export Job is still running, and "Run both" is rejected with `409` while an earlier chain is still in flight. The chain runs on a background thread, so closing the browser tab does not abandon it — but its state is in memory only, so restarting the pod mid-chain loses it.
+
+### Schedule sync credentials
+
+The schedule sync authenticates as a GitHub App, minting a short-lived installation token per call. Without these the page still works; the schedule buttons are disabled and the panel reads "not configured".
+
+| Variable                     | Default                      | Description                             |
+| ---------------------------- | ---------------------------- | --------------------------------------- |
+| `GITHUB_APP_ID`              | —                            | App ID from the App's General page      |
+| `GITHUB_APP_INSTALLATION_ID` | —                            | Trailing number of the installation URL |
+| `GITHUB_APP_PRIVATE_KEY`     | —                            | PEM contents of a generated private key |
+| `GITHUB_REPO`                | `jcwearn/anupamaandjackson`  | Repo owning the workflow                |
+| `GITHUB_WORKFLOW_FILE`       | `refresh-schedule-index.yml` | Workflow file to dispatch               |
+| `GITHUB_REF`                 | `main`                       | Ref to dispatch against                 |
+
+To create the App: **Settings → Developer settings → GitHub Apps → New GitHub App**. Uncheck webhook **Active**, grant repository permission **Actions: Read and write** and nothing else (the workflow commits with its own `GITHUB_TOKEN`), restrict installation to your own account, then install it on the target repo only. Generate a private key and supply all three values as `Secret` env vars on the Deployment.
+
+Rotate by generating a new key in the App's settings, replacing `GITHUB_APP_PRIVATE_KEY`, then deleting the old key.
 
 ## Development
 

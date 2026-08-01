@@ -10,7 +10,7 @@ The image also ships a manual-trigger web UI (`web.py`) for on-demand runs in Ku
 
 ## Layout
 
-Two source files, no package, no Makefile.
+Three source files, no package, no Makefile.
 
 `exporter.py` — the export itself (default ENTRYPOINT):
 - `main()` — env validation + orchestration
@@ -22,11 +22,16 @@ Two source files, no package, no Makefile.
 - `_dump_debug()` — screenshot + HTML dump on failure (or every step when `DEBUG=1`)
 
 `web.py` — Flask trigger page, k8s-only (run with `command: ["python", "web.py"]`):
-- `GET /` — button + status page; `GET /api/status` — latest Job summary; `POST /api/trigger` — creates a Job from the CronJob template (409 if one is active)
-- Config: `NAMESPACE`, `CRONJOB_NAME` (both default `withjoy-exporter`), `PORT` (8080)
-- Needs a ServiceAccount with `get` on the CronJob and `get`/`list`/`create` on Jobs
+- `GET /` — three-button status page; `GET /api/status` — `{export, schedule, chain}`
+- `POST /api/trigger` — creates a Job from the CronJob template (409 if one is active)
+- `POST /api/sync-schedule` — dispatches the wedding-site workflow (503 unconfigured, 502 on GitHub errors)
+- `POST /api/run-both` — creates the Job, then `run_chain` on a daemon thread dispatches the workflow **only if the export succeeded** (409 if a chain is already in flight)
+- Config: `NAMESPACE`, `CRONJOB_NAME` (both default `withjoy-exporter`), `PORT` (8080), plus the `GITHUB_*` vars listed in `README.md`
+- Needs a ServiceAccount with `get` on the CronJob and `get`/`list`/`create` on Jobs (`get` on Jobs is what `run_chain` polls with)
 
-`test_web.py` — pytest suite for `web.py` (mocked k8s client). `test_exporter.py` — pure-function tests for the CSV transforms in `exporter.py`. The Playwright path has no tests; verify via Docker.
+`github_sync.py` — GitHub App client for the schedule sync. Signs an App JWT, exchanges it for a cached installation token, dispatches the workflow, and summarizes runs into the same `running`/`succeeded`/`failed` vocabulary the Job side uses. Flask-free so it tests standalone.
+
+`test_web.py` — pytest suite for `web.py` (mocked k8s client and `github_sync`). `test_github_sync.py` — JWT claims, token caching, run matching. `test_exporter.py` — pure-function tests for the CSV transforms in `exporter.py`. The Playwright path has no tests; verify via Docker.
 
 ## How to run
 
@@ -62,6 +67,8 @@ pytest
 - **MFA on the WithJoy bot account will hang the run.** The `LoginFailed` error message in `exporter.py` already says this — keep it.
 - **Keep `ignore-error=true` on `cache-to: type=gha`.** With `mode=max`, BuildKit re-reserves a cache entry for every layer on every run. The `refs/heads/main` cache scope holds blobs that every build reads (so they never age out), and GitHub's cache service treats re-reserving an existing key as a hard error — which cancels the in-flight image push. Without the flag, `release.yml` creates a git tag but pushes no image and no GitHub Release. Don't remove it.
 - **`.har` files in the repo root** are local debug captures (one is ~23MB). They're not source. Leave them alone; they're gitignored.
+- **`workflow_dispatch` answers `204` with an empty body**, so there is no run id to correlate on. `github_sync.find_run()` matches the newest run created at or after the dispatch time, with five seconds of slack for clock skew between the pod and GitHub. Don't tighten that slack: a run stamped a moment before our own clock read would be missed forever, and the page would sit on "waiting for the run to appear".
+- **`schedule_state()` caches deliberately.** The page polls every 3s; hitting the GitHub API twice a tick would burn the App's hourly rate limit on an idle tab. Idle state is re-checked at most once a minute (`IDLE_REFRESH_SECONDS`), while a run in flight is never served from cache.
 
 ## Verification
 
