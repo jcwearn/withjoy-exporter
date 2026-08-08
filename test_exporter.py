@@ -77,6 +77,90 @@ def test_expand_tags_no_tags_anywhere_is_noop():
     assert rows == [_header(), ["Alice", "Smith", "", "yes"]]
 
 
+def test_parse_columns_splits_on_commas_and_newlines():
+    assert exporter._parse_columns("first name, last name\nemail") == [
+        "first name",
+        "last name",
+        "email",
+    ]
+
+
+def test_parse_columns_strips_whitespace_and_empty_segments():
+    assert exporter._parse_columns("  first name , ,\n\n last name ,") == [
+        "first name",
+        "last name",
+    ]
+
+
+def test_parse_columns_empty_string():
+    assert exporter._parse_columns("") == []
+
+
+def test_select_columns_reorders_and_drops_undeclared():
+    rows = [
+        ["First", "Last", "Suffix", "Email"],
+        ["Alice", "Smith", "Jr", "alice@example.com"],
+    ]
+    exporter._select_columns(rows, ["email", "first"])
+    assert rows == [
+        ["email", "first"],
+        ["alice@example.com", "Alice"],
+    ]
+
+
+def test_select_columns_missing_column_is_empty():
+    rows = [
+        ["First", "Last"],
+        ["Alice", "Smith"],
+    ]
+    exporter._select_columns(rows, ["First", "Title", "Last"])
+    assert rows == [
+        ["First", "Title", "Last"],
+        ["Alice", "", "Smith"],
+    ]
+
+
+def test_select_columns_appends_undeclared_tag_columns():
+    rows = [
+        ["First", "admin (tag)", "Batch 5 (tag)", "sangeet (tag)"],
+        ["Alice", 1, 0, 1],
+    ]
+    exporter._select_columns(rows, ["First", "sangeet (tag)", "admin (tag)"])
+    assert rows == [
+        ["First", "sangeet (tag)", "admin (tag)", "Batch 5 (tag)"],
+        ["Alice", 1, 1, 0],
+    ]
+
+
+def test_select_columns_uses_declared_names_and_matches_case_insensitively():
+    rows = [
+        ["  First Name ", "LAST NAME"],
+        ["Alice", "Smith"],
+    ]
+    exporter._select_columns(rows, ["first name", "last name"])
+    assert rows[0] == ["first name", "last name"]
+    assert rows[1] == ["Alice", "Smith"]
+
+
+def test_select_columns_pads_ragged_rows():
+    rows = [
+        ["First", "Last", "Email"],
+        ["Alice", "Smith", "alice@example.com"],
+        ["Bob"],
+    ]
+    exporter._select_columns(rows, ["Email", "First"])
+    assert rows[2] == ["", "Bob"]
+
+
+def test_select_columns_empty_config_is_noop():
+    rows = [
+        ["First", "Last"],
+        ["Alice", "Smith"],
+    ]
+    exporter._select_columns(rows, [])
+    assert rows == [["First", "Last"], ["Alice", "Smith"]]
+
+
 def test_rows_equal_treats_int_and_str_cells_as_equal():
     assert exporter._rows_equal([["Alice", 1, 0]], [["Alice", "1", "0"]])
 

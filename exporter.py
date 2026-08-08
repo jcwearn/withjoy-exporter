@@ -159,6 +159,52 @@ def _expand_tags(rows: list[list[str]]) -> list[list[str]]:
     return rows
 
 
+def _parse_columns(value: str) -> list[str]:
+    return [name.strip() for name in re.split(r"[,\n]", value) if name.strip()]
+
+
+def _select_columns(rows: list[list[str]], columns: list[str]) -> list[list[str]]:
+    if not columns or not rows:
+        return rows
+    header = rows[0]
+
+    by_name: dict[str, int] = {}
+    for i, name in enumerate(header):
+        by_name.setdefault(name.strip().lower(), i)
+
+    wanted = {name.strip().lower() for name in columns}
+    indices: list[int | None] = [by_name.get(name.strip().lower()) for name in columns]
+    out_header = list(columns)
+
+    missing = [name for name, idx in zip(columns, indices) if idx is None]
+    if missing:
+        print(f"columns not found in export: {', '.join(missing)}", file=sys.stderr)
+
+    extra_tags = []
+    dropped = []
+    for i, name in enumerate(header):
+        key = name.strip().lower()
+        if key in wanted or not key:
+            continue
+        if key.endswith("(tag)"):
+            extra_tags.append(name)
+            indices.append(i)
+            out_header.append(name)
+        else:
+            dropped.append(name)
+    if extra_tags:
+        print(f"appending undeclared tag columns: {', '.join(extra_tags)}", file=sys.stderr)
+    if dropped:
+        print(f"ignoring undeclared export columns: {', '.join(dropped)}", file=sys.stderr)
+
+    header[:] = out_header
+    for row in rows[1:]:
+        row[:] = [
+            row[idx] if idx is not None and idx < len(row) else "" for idx in indices
+        ]
+    return rows
+
+
 def _rows_equal(a: list[list[str]], b: list[list[str]]) -> bool:
     if len(a) != len(b):
         return False
@@ -204,10 +250,12 @@ def upload_to_sheets(
     latest_tab: str,
     timezone: str,
     keep_days: int,
+    columns: list[str],
 ) -> tuple[int, str, int, bool]:
     rows = _parse_csv(csv_bytes)
     _label_plus_ones(rows)
     _expand_tags(rows)
+    _select_columns(rows, columns)
     guest_count = max(len(rows) - 1, 0)
 
     client = gspread.service_account(filename=credentials_path)
@@ -242,10 +290,11 @@ def main() -> int:
         latest_tab = os.environ.get("LATEST_TAB_NAME", "latest")
         timezone = os.environ.get("TIMEZONE", "America/New_York")
         keep_days = int(os.environ.get("HISTORY_KEEP_DAYS", "5"))
+        columns = _parse_columns(os.environ.get("EXPORT_COLUMNS", ""))
 
         csv_bytes = download_csv(username, password, guest_list_url)
         guest_count, today, pruned, changed = upload_to_sheets(
-            csv_bytes, sheet_id, credentials_path, latest_tab, timezone, keep_days
+            csv_bytes, sheet_id, credentials_path, latest_tab, timezone, keep_days, columns
         )
         if changed:
             print(
