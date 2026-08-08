@@ -13,8 +13,8 @@ WithJoy doesn't expose a server-side export endpoint — its **Export All Guests
 2. Navigates to your guest list page and clicks **Export All Guests**
 3. Intercepts the resulting CSV download
 4. Pushes it to a Google Sheet using a service account:
+   - Optionally restricts the CSV's columns to `EXPORT_COLUMNS`, so a WithJoy schema change can't shift your columns around
    - Expands the `Tags` column: each unique tag becomes an appended `<tag> (tag)` column (alphabetical) with `1`/`0` values, so guests can be filtered and counted per tag
-   - Optionally pins the column set to `EXPORT_COLUMNS`, so a WithJoy schema change can't shift your columns around
    - Overwrites a `latest` tab on every run
    - Creates a dated tab (`YYYY-MM-DD`) for history
    - Prunes dated tabs beyond `HISTORY_KEEP_DAYS` (default 5)
@@ -122,18 +122,18 @@ docker run --rm \
 | `HISTORY_KEEP_DAYS`               | no       | `5`                                    | How many dated history tabs to retain                        |
 | `DEBUG`                           | no       | unset                                  | When set, dumps screenshots/HTML at each step to `/tmp/debug` |
 | `DEBUG_OUTPUT_DIR`                | no       | `/tmp/debug`                           | Where debug artifacts are written on failure                 |
-| `EXPORT_COLUMNS`                  | no       | unset                                  | Pins the exported columns; unset exports everything          |
+| `EXPORT_COLUMNS`                  | no       | unset                                  | Pins which CSV columns are taken; unset takes everything     |
 
 ### Pinning columns with `EXPORT_COLUMNS`
 
-By default the sheet mirrors whatever columns WithJoy's CSV happens to contain — so when WithJoy adds or removes a column, everything to its right shifts position. `EXPORT_COLUMNS` fixes the layout: it's a comma-separated list of column names (newlines also work as separators, which keeps the list readable in a k8s ConfigMap), and the sheet gets exactly those columns, in exactly that order.
+By default the sheet mirrors whatever columns WithJoy's CSV happens to contain — so when WithJoy adds or removes a column, everything to its right shifts position. `EXPORT_COLUMNS` fixes the layout: it's a comma-separated list of column names (newlines also work as separators, which keeps the list readable in a k8s ConfigMap), and exactly those columns are taken from the CSV, in exactly that order. Anything else WithJoy sends is dropped and logged as `ignoring undeclared export columns: ...` — that line is your early warning that they changed their schema again.
 
-Names are matched case-insensitively and ignore surrounding whitespace, but the sheet header is written using the names as you spelled them here. Tag columns are named `<tag> (tag)` — the same names the tag expansion produces — and can be listed alongside the regular columns.
+Names are matched case-insensitively and ignore surrounding whitespace, but the sheet header is written using the names as you spelled them here.
 
 Two behaviors worth knowing:
 
-- **A listed column that isn't in the export** (WithJoy renamed or dropped it) is still written, with empty cells, and the run logs `columns not found in export: ...` to stderr. Positions never shift and the cron keeps running.
-- **A `<tag> (tag)` column that isn't listed** is appended after your listed columns, alphabetically. New tags you create in WithJoy show up on their own without shifting anything. Non-tag columns that aren't listed are dropped, and logged as `ignoring undeclared export columns: ...` — that line is your early warning that WithJoy changed their schema again.
+- **A listed column that isn't in the CSV** (WithJoy renamed or dropped it) is still written, with empty cells, and the run logs `columns not found in export: ...` to stderr. Positions never shift and the cron keeps running.
+- **`<tag> (tag)` columns are not affected by this list.** Selection happens against the raw CSV, before tag expansion; the generated tag columns are then appended after your listed columns, alphabetical as always. Every tag in use gets a column, including tags you create later — you never have to add them here. The one thing to keep in mind is that `tags` itself must stay in the list, since that's the column the expansion reads.
 
 ## Running in k3s
 

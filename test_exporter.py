@@ -120,16 +120,17 @@ def test_select_columns_missing_column_is_empty():
     ]
 
 
-def test_select_columns_appends_undeclared_tag_columns():
+def test_select_columns_then_expand_tags_keeps_all_tag_columns():
     rows = [
-        ["First", "admin (tag)", "Batch 5 (tag)", "sangeet (tag)"],
-        ["Alice", 1, 0, 1],
+        ["First", "Suffix", "Tags"],
+        ["Alice", "Jr", "sangeet, admin"],
+        ["Bob", "", "admin"],
     ]
-    exporter._select_columns(rows, ["First", "sangeet (tag)", "admin (tag)"])
-    assert rows == [
-        ["First", "sangeet (tag)", "admin (tag)", "Batch 5 (tag)"],
-        ["Alice", 1, 1, 0],
-    ]
+    exporter._select_columns(rows, ["First", "Tags"])
+    exporter._expand_tags(rows)
+    assert rows[0] == ["First", "Tags", "admin (tag)", "sangeet (tag)"]
+    assert rows[1] == ["Alice", "sangeet, admin", 1, 1]
+    assert rows[2] == ["Bob", "admin", 1, 0]
 
 
 def test_select_columns_uses_declared_names_and_matches_case_insensitively():

@@ -15,8 +15,8 @@ Three source files, no package, no Makefile.
 `exporter.py` — the export itself (default ENTRYPOINT):
 - `main()` — env validation + orchestration
 - `download_csv()` — Playwright login + export-button click + CSV byte capture
+- `_select_columns()` — restricts/reorders the CSV's columns to the `EXPORT_COLUMNS` list (`_parse_columns()` splits it on commas or newlines); no-op when unset
 - `_expand_tags()` — appends one `<tag> (tag)` column per unique tag (alphabetical, int 1/0); finds the tags column by header name
-- `_select_columns()` — restricts/reorders columns to the `EXPORT_COLUMNS` list (`_parse_columns()` splits it on commas or newlines); no-op when unset
 - `upload_to_sheets()` — orchestrates `_write_rows` for `latest` and today's tab, then prunes
 - `_write_rows()` — writes a single tab; **must `resize()` before `update()`** (see Gotchas)
 - `_prune_history()` — deletes dated tabs older than `HISTORY_KEEP_DAYS`
@@ -65,7 +65,7 @@ pytest
 
 - **Resize before update on existing tabs** (commit 9b540d3). `worksheet.clear()` preserves grid dimensions. If the existing `latest` tab is narrower than the new data, `worksheet.update()` silently broadcasts the first column's value across all columns instead of writing rows left-to-right. `_write_rows()` calls `worksheet.resize(rows=n_rows, cols=n_cols)` before `update()` for this reason. Don't remove it. Newly-created dated tabs are unaffected because `add_worksheet(rows, cols)` sizes them at creation time.
 - **Pad rows to a rectangular shape before `update()`.** Same failure mode as the resize gotcha, but per-row. WithJoy's CSV strips trailing empty fields, so `csv.reader` returns ragged rows (e.g. a plus-one row with only 14 of 22 cells). `gspread.update()` does not pad them, and on a reused worksheet the API broadcasts the row's leading value across the wider grid. `_write_rows()` runs `gspread.utils.fill_gaps(rows, rows=n_rows, cols=n_cols)` before `update()` for this reason. Don't remove it.
-- **`_select_columns()` must run after `_expand_tags()`.** The `EXPORT_COLUMNS` list names `<tag> (tag)` columns, which don't exist until tag expansion has run. Reordering the pipeline in `upload_to_sheets()` would silently blank every tag column.
+- **`_select_columns()` must run before `_expand_tags()`.** `EXPORT_COLUMNS` is deliberately scoped to WithJoy's own columns; tag columns are generated afterwards and are never subject to the list, so new tags need no config change. Swapping the order in `upload_to_sheets()` would drop every tag column not named in the list. The list must keep `tags` in it, or expansion finds no tags column and generates nothing.
 - **MFA on the WithJoy bot account will hang the run.** The `LoginFailed` error message in `exporter.py` already says this — keep it.
 - **Keep `ignore-error=true` on `cache-to: type=gha`.** With `mode=max`, BuildKit re-reserves a cache entry for every layer on every run. The `refs/heads/main` cache scope holds blobs that every build reads (so they never age out), and GitHub's cache service treats re-reserving an existing key as a hard error — which cancels the in-flight image push. Without the flag, `release.yml` creates a git tag but pushes no image and no GitHub Release. Don't remove it.
 - **`.har` files in the repo root** are local debug captures (one is ~23MB). They're not source. Leave them alone; they're gitignored.
