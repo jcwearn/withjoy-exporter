@@ -1,4 +1,20 @@
+import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
 import exporter
+
+
+class _FakePage:
+    """Records goto calls and times out for the first `failures` of them."""
+
+    def __init__(self, failures=0):
+        self.failures = failures
+        self.calls = []
+
+    def goto(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        if len(self.calls) <= self.failures:
+            raise PlaywrightTimeout("Page.goto: Timeout 60000ms exceeded.")
 
 
 def _header(tags_idx=2, width=4):
@@ -168,3 +184,30 @@ def test_rows_equal_treats_int_and_str_cells_as_equal():
 
 def test_rows_equal_detects_difference():
     assert not exporter._rows_equal([["Alice", 1]], [["Alice", "0"]])
+
+
+def test_goto_login_succeeds_without_retrying():
+    page = _FakePage()
+    slept = []
+    exporter._goto_login(page, sleep=slept.append)
+    assert len(page.calls) == 1
+    assert page.calls[0][0] == exporter.LOGIN_URL
+    assert page.calls[0][1]["timeout"] == exporter.LOGIN_NAV_TIMEOUT_MS
+    assert slept == []
+
+
+def test_goto_login_retries_transient_timeouts():
+    page = _FakePage(failures=2)
+    slept = []
+    exporter._goto_login(page, sleep=slept.append)
+    assert len(page.calls) == 3
+    assert slept == [exporter.LOGIN_NAV_BACKOFF_SECONDS] * 2
+
+
+def test_goto_login_reraises_after_last_attempt():
+    page = _FakePage(failures=3)
+    slept = []
+    with pytest.raises(PlaywrightTimeout):
+        exporter._goto_login(page, sleep=slept.append, attempts=3)
+    assert len(page.calls) == 3
+    assert slept == [exporter.LOGIN_NAV_BACKOFF_SECONDS] * 2

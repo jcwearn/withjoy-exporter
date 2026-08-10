@@ -3,6 +3,7 @@ import io
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -13,6 +14,9 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
 LOGIN_URL = "https://withjoy.com/login"
+LOGIN_NAV_TIMEOUT_MS = 60_000
+LOGIN_NAV_ATTEMPTS = 3
+LOGIN_NAV_BACKOFF_SECONDS = 5
 DATE_TAB_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -42,6 +46,27 @@ def _dump_debug(page, label: str) -> None:
         print(f"failed to dump debug output: {exc}", file=sys.stderr)
 
 
+def _goto_login(page, sleep=time.sleep, attempts: int = LOGIN_NAV_ATTEMPTS) -> None:
+    """Navigate to the login page, retrying transient navigation timeouts.
+
+    This is the first thing the run does, so a blip reaching withjoy.com used
+    to kill the whole export on Playwright's 30s default. Every later step
+    already tolerates a slow page, so give the entry point the same slack.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=LOGIN_NAV_TIMEOUT_MS)
+            return
+        except PlaywrightTimeout:
+            if attempt == attempts:
+                raise
+            print(
+                f"login page navigation timed out (attempt {attempt}/{attempts}); retrying",
+                file=sys.stderr,
+            )
+            sleep(LOGIN_NAV_BACKOFF_SECONDS)
+
+
 def download_csv(username: str, password: str, guest_list_url: str) -> bytes:
     debug = bool(os.environ.get("DEBUG"))
     with sync_playwright() as p:
@@ -50,7 +75,7 @@ def download_csv(username: str, password: str, guest_list_url: str) -> bytes:
             context = browser.new_context(accept_downloads=True)
             page = context.new_page()
 
-            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            _goto_login(page)
 
             email_input = page.locator(
                 'input[type="email"], input[name="email"], input[name="username"]'
