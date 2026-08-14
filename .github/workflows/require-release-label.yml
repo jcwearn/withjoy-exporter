@@ -1,33 +1,25 @@
 name: Require Release Label
 
+# Calls the shared check in jcwearn/workflows, so the label vocabulary is
+# defined in one place rather than drifting between repos. The version this
+# replaces matched with `grep -q '"release:patch"'` over the label JSON, which
+# is a substring test -- a label like `prerelease:patch` would have counted.
+#
+# release:skip is part of that vocabulary now, so a docs-only or CI-only PR has
+# a way out that is not "forget the label and go red after the merge." That
+# matters here in particular: Renovate auto-labels every dependency PR
+# release:patch, so most of this repo's version history is bot bumps.
+#
+# `edited` is in the types list because it fires when a PR's base branch
+# changes. Without it a stacked PR retargeted onto main after its parent merges
+# never runs this check at all -- every earlier event was filtered out by
+# branches: [main] while the base was still the parent branch.
+
 on:
   pull_request:
-    types: [opened, labeled, unlabeled, synchronize]
+    types: [opened, reopened, edited, labeled, unlabeled, synchronize]
     branches: [main]
 
 jobs:
-  check-label:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check for release label
-        env:
-          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
-        run: |
-          count=0
-          for label in "release:major" "release:minor" "release:patch"; do
-            if echo "$LABELS" | grep -q "\"$label\""; then
-              count=$((count + 1))
-            fi
-          done
-
-          if [ "$count" -eq 0 ]; then
-            echo "::error::PR must have exactly one release label: release:major, release:minor, or release:patch"
-            exit 1
-          fi
-
-          if [ "$count" -gt 1 ]; then
-            echo "::error::PR must have exactly one release label, but found $count"
-            exit 1
-          fi
-
-          echo "Release label check passed"
+  check:
+    uses: jcwearn/workflows/.github/workflows/require-release-label.yaml@v1
