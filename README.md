@@ -137,11 +137,14 @@ Two behaviors worth knowing:
 
 ## Running in k3s
 
-A `release:patch` / `release:minor` / `release:major` label on a merged PR triggers the `Release` workflow, which builds and publishes the image to GitHub Container Registry:
+Exactly one of `release:patch` / `release:minor` / `release:major` / `release:skip` on a merged PR drives the `Release` workflow, which calls [jcwearn/workflows](https://github.com/jcwearn/workflows). It builds and pushes the image **before** creating the tag or GitHub Release, so a failed build never leaves a version pointing at an image that doesn't exist.
+
+`release:skip` publishes nothing — for docs-only or CI-only PRs.
 
 ```
 ghcr.io/jcwearn/withjoy-exporter:vX.Y.Z
 ghcr.io/jcwearn/withjoy-exporter:vX.Y
+ghcr.io/jcwearn/withjoy-exporter:vX
 ghcr.io/jcwearn/withjoy-exporter:sha-<commit>
 ```
 
