@@ -1,17 +1,18 @@
 name: Build Image
 
-# Builds the container on a pull request without pushing it, so a Dockerfile or
-# dependency change that breaks the image is caught before merge rather than
-# during a release.
+# Calls the shared Docker build workflow in jcwearn/workflows, replacing a local
+# copy of the same four steps that world-clock and ansible-runner also carried,
+# and that release.yaml's build job carried a fourth time.
+#
+# Builds without pushing: with no `image` input the shared workflow skips the
+# registry login entirely, so this needs no credentials and no packages scope.
+# Pushing stays release.yml's job, which reaches the same shared workflow
+# through release.yaml with an `image` set -- so the PR path and the release
+# path are one implementation rather than two that happened to agree.
 #
 # The `test` job that used to live here moved to ci.yml, which calls the shared
-# Python CI workflow. It was worth moving rather than copying: it hardcoded
-# python-version: "3.14" while this Dockerfile's base image ships 3.12.3, so it
-# had been testing an interpreter the container never runs. The replacement
-# reads .python-version, and adds the lint and format checks this repo never
-# had.
-#
-# This workflow now does one thing, which matches its name.
+# Python CI workflow. With the build now delegated too, this file is a single
+# call and nothing else, which matches its name.
 
 on:
   pull_request:
@@ -19,15 +20,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: .
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max,ignore-error=true
+    # Explicit even though `read` is all this needs and all the account grants
+    # by default. A reusable workflow can only narrow what the caller granted,
+    # so the grant belongs here where it is visible. `packages: write` is
+    # deliberately absent: nothing is pushed from a pull request.
+    permissions:
+      contents: read
+    # Renovate pins this to a digest on its next run, leaving `# v1` behind as
+    # the record of what to follow. Written as `@v1` with no trailing comment;
+    # the comment belongs on a digest, where it records which tag it came from.
+    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@v1
