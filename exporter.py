@@ -42,7 +42,14 @@ def _dump_debug(page, label: str) -> None:
         page.screenshot(path=str(debug_dir / f"{label}.png"), full_page=True)
         (debug_dir / f"{label}.html").write_text(page.content(), encoding="utf-8")
         print(f"wrote debug artifacts to {debug_dir}/{label}.{{png,html}}", file=sys.stderr)
-    except Exception as exc:
+    # The blanket catch below is deliberate, not a dodge. This helper runs only
+    # while something has already gone wrong, and its whole job is to capture
+    # evidence about that. A screenshot or a page.content() call that raises
+    # here -- a closed page, a full disk, a read-only DEBUG_OUTPUT_DIR -- must
+    # not replace the real failure with a second one from the diagnostics.
+    # Narrowing it means guessing which of playwright's and the filesystem's
+    # exception types can surface, and being wrong loses the original error.
+    except Exception as exc:  # noqa: BLE001
         print(f"failed to dump debug output: {exc}", file=sys.stderr)
 
 
@@ -157,9 +164,7 @@ def _expand_tags(rows: list[list[str]]) -> list[list[str]]:
     if len(rows) < 2:
         return rows
     header = rows[0]
-    tags_idx = next(
-        (i for i, name in enumerate(header) if name.strip().lower() == "tags"), None
-    )
+    tags_idx = next((i for i, name in enumerate(header) if name.strip().lower() == "tags"), None)
     if tags_idx is None:
         return rows
 
@@ -210,9 +215,7 @@ def _select_columns(rows: list[list[str]], columns: list[str]) -> list[list[str]
 
     header[:] = list(columns)
     for row in rows[1:]:
-        row[:] = [
-            row[idx] if idx is not None and idx < len(row) else "" for idx in indices
-        ]
+        row[:] = [row[idx] if idx is not None and idx < len(row) else "" for idx in indices]
     return rows
 
 

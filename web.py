@@ -2,7 +2,7 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from flask import Flask, jsonify, render_template_string
 from kubernetes import client, config
@@ -308,7 +308,7 @@ def mark_dispatched(dispatched_at: datetime) -> None:
 
 
 def schedule_state(now: datetime | None = None) -> dict:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if not github_sync.configured():
         return {"state": "unconfigured"}
     with _schedule_lock:
@@ -364,8 +364,13 @@ def chain_running() -> bool:
     return chain_state().get("state") in ("waiting-export", "dispatching")
 
 
-def run_chain(api, job_name: str, sleep=time.sleep, attempts: int = CHAIN_MAX_POLLS,
-              now: datetime | None = None) -> None:
+def run_chain(
+    api,
+    job_name: str,
+    sleep=time.sleep,
+    attempts: int = CHAIN_MAX_POLLS,
+    now: datetime | None = None,
+) -> None:
     """Wait for an export Job, then dispatch the schedule sync if it succeeded.
 
     Runs on a daemon thread so closing the browser tab doesn't abandon the
@@ -404,7 +409,7 @@ def run_chain(api, job_name: str, sleep=time.sleep, attempts: int = CHAIN_MAX_PO
             return
         sleep(CHAIN_POLL_SECONDS)
 
-    dispatched_at = now or datetime.now(timezone.utc)
+    dispatched_at = now or datetime.now(UTC)
     _set_chain(state="dispatching", job_name=job_name)
     try:
         github_sync.dispatch_workflow()
@@ -435,7 +440,7 @@ def api_status():
 @app.post("/api/trigger")
 def api_trigger():
     try:
-        job = create_export_job(batch_api(), datetime.now(timezone.utc))
+        job = create_export_job(batch_api(), datetime.now(UTC))
     except TriggerError as exc:
         return jsonify({"error": str(exc)}), exc.status
     return jsonify({"job_name": job.metadata.name}), 202
@@ -445,7 +450,7 @@ def api_trigger():
 def api_sync_schedule():
     if not github_sync.configured():
         return jsonify({"error": "GitHub App is not configured."}), 503
-    dispatched_at = datetime.now(timezone.utc)
+    dispatched_at = datetime.now(UTC)
     try:
         github_sync.dispatch_workflow()
     except github_sync.GitHubError as exc:
@@ -462,12 +467,10 @@ def api_run_both():
         return jsonify({"error": "A chained run is already in progress."}), 409
     api = batch_api()
     try:
-        job = create_export_job(api, datetime.now(timezone.utc))
+        job = create_export_job(api, datetime.now(UTC))
     except TriggerError as exc:
         return jsonify({"error": str(exc)}), exc.status
-    threading.Thread(
-        target=run_chain, args=(api, job.metadata.name), daemon=True
-    ).start()
+    threading.Thread(target=run_chain, args=(api, job.metadata.name), daemon=True).start()
     return jsonify({"job_name": job.metadata.name}), 202
 
 

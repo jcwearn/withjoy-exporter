@@ -1,0 +1,28 @@
+# ruff.toml rather than pyproject.toml: this repo is not a package. There is no
+# build backend, dependencies are pinned in requirements*.txt, and the
+# Dockerfile COPYs three modules directly. A pyproject.toml would invite tooling
+# to treat this as installable and invite the next person to migrate dependency
+# management along with it.
+
+# Matches the interpreter the container actually runs. The Dockerfile's base is
+# mcr.microsoft.com/playwright/python:v1.62.0-noble, which is Ubuntu 24.04 and
+# ships Python 3.12.3 -- verified with `docker run --rm <image> python -V`.
+#
+# Keep this in step with .python-version and with the base image. If Renovate
+# bumps the playwright image across a Python MINOR, both need moving; re-run
+# that command rather than assuming.
+target-version = "py312"
+
+# Matches printWidth: 100 in the sibling Node repos, so a line of Python and a
+# line of TypeScript wrap at the same place.
+line-length = 100
+
+[lint]
+# Left at ruff's default select -- ["E4", "E7", "E9", "F"] -- for the first
+# adoption. Widening happens afterwards, one rule family per commit, so a noisy
+# family can be dropped without unpicking the others.
+#
+# Worth knowing: E501 (line too long) is deliberately absent from the default E
+# set. The formatter owns line length, and selecting E501 makes `ruff format`
+# and `ruff check` disagree about strings and comments the formatter cannot
+# break.

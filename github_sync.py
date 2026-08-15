@@ -13,7 +13,7 @@ import os
 import threading
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -77,7 +77,7 @@ _token: dict = {}
 
 def installation_token(now: datetime | None = None) -> str:
     """An installation token, cached until a minute before it expires."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if not configured():
         raise GitHubError(
             "GitHub App is not configured (GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, "
@@ -102,7 +102,9 @@ def installation_token(now: datetime | None = None) -> str:
 
 
 def _parse_ts(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    # fromisoformat has parsed a trailing Z natively since 3.11 and the
+    # container runs 3.12, so the old .replace("Z", "+00:00") was a no-op.
+    return datetime.fromisoformat(value)
 
 
 def dispatch_workflow() -> None:
