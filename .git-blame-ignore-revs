@@ -1,0 +1,7 @@
+# Revisions to skip when walking blame. Formatting only — no behaviour changed.
+#
+# GitHub reads this file automatically. Locally:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format the repo with ruff (the first run over the whole tree)
+7098ac986c47e3bd291d68481dce0af8611ca9ac
