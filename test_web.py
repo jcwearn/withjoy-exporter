@@ -6,12 +6,18 @@ from kubernetes import client
 import web
 
 
-def _job(name, created, active=None, succeeded=None, failed=None, labels=None,
-         start_time=None, completion_time=None):
+def _job(
+    name,
+    created,
+    active=None,
+    succeeded=None,
+    failed=None,
+    labels=None,
+    start_time=None,
+    completion_time=None,
+):
     return client.V1Job(
-        metadata=client.V1ObjectMeta(
-            name=name, creation_timestamp=created, labels=labels or {}
-        ),
+        metadata=client.V1ObjectMeta(name=name, creation_timestamp=created, labels=labels or {}),
         status=client.V1JobStatus(
             active=active,
             succeeded=succeeded,
@@ -132,8 +138,10 @@ def _reset_state():
 def test_status_endpoint():
     _reset_state()
     api = _mock_api([_job("run", T1, succeeded=1, completion_time=T2)])
-    with patch.object(web, "batch_api", return_value=api), \
-         patch.object(web.github_sync, "configured", return_value=False):
+    with (
+        patch.object(web, "batch_api", return_value=api),
+        patch.object(web.github_sync, "configured", return_value=False),
+    ):
         res = web.app.test_client().get("/api/status")
     assert res.status_code == 200
     body = res.get_json()
@@ -155,8 +163,10 @@ def test_index_renders_all_three_buttons():
 
 def test_sync_schedule_dispatches():
     _reset_state()
-    with patch.object(web.github_sync, "configured", return_value=True), \
-         patch.object(web.github_sync, "dispatch_workflow") as dispatch:
+    with (
+        patch.object(web.github_sync, "configured", return_value=True),
+        patch.object(web.github_sync, "dispatch_workflow") as dispatch,
+    ):
         res = web.app.test_client().post("/api/sync-schedule")
     assert res.status_code == 202
     dispatch.assert_called_once()
@@ -174,12 +184,14 @@ def test_sync_schedule_requires_configuration():
 
 def test_sync_schedule_surfaces_github_errors():
     _reset_state()
-    with patch.object(web.github_sync, "configured", return_value=True), \
-         patch.object(
-             web.github_sync,
-             "dispatch_workflow",
-             side_effect=web.github_sync.GitHubError("boom"),
-         ):
+    with (
+        patch.object(web.github_sync, "configured", return_value=True),
+        patch.object(
+            web.github_sync,
+            "dispatch_workflow",
+            side_effect=web.github_sync.GitHubError("boom"),
+        ),
+    ):
         res = web.app.test_client().post("/api/sync-schedule")
     assert res.status_code == 502
     assert "boom" in res.get_json()["error"]
@@ -188,8 +200,10 @@ def test_sync_schedule_surfaces_github_errors():
 def test_schedule_state_caches_while_idle():
     _reset_state()
     run = {"state": "succeeded", "run_id": 5, "html_url": "u", "created_at": "t"}
-    with patch.object(web.github_sync, "configured", return_value=True), \
-         patch.object(web.github_sync, "latest_run", return_value=run) as latest:
+    with (
+        patch.object(web.github_sync, "configured", return_value=True),
+        patch.object(web.github_sync, "latest_run", return_value=run) as latest,
+    ):
         first = web.schedule_state(T1)
         second = web.schedule_state(T1 + timedelta(seconds=10))
     assert first["run_id"] == 5
@@ -202,9 +216,11 @@ def test_schedule_state_caches_while_idle():
 def test_schedule_state_refetches_a_running_run():
     _reset_state()
     running = {"state": "running", "run_id": 5, "html_url": "u", "created_at": "t"}
-    with patch.object(web.github_sync, "configured", return_value=True), \
-         patch.object(web.github_sync, "latest_run", return_value=running), \
-         patch.object(web.github_sync, "run_status", return_value=running) as status:
+    with (
+        patch.object(web.github_sync, "configured", return_value=True),
+        patch.object(web.github_sync, "latest_run", return_value=running),
+        patch.object(web.github_sync, "run_status", return_value=running) as status,
+    ):
         web.schedule_state(T1)
         web.schedule_state(T1 + timedelta(seconds=3))
     # A run in flight is never served from cache.
@@ -274,9 +290,11 @@ def test_chain_aborts_when_the_dispatch_fails():
 def test_run_both_creates_the_job_and_starts_the_chain():
     _reset_state()
     api = _mock_api([_job("done", T1, succeeded=1)], cronjob=_cronjob())
-    with patch.object(web, "batch_api", return_value=api), \
-         patch.object(web.github_sync, "configured", return_value=True), \
-         patch.object(web, "threading") as threading_mod:
+    with (
+        patch.object(web, "batch_api", return_value=api),
+        patch.object(web.github_sync, "configured", return_value=True),
+        patch.object(web, "threading") as threading_mod,
+    ):
         res = web.app.test_client().post("/api/run-both")
     assert res.status_code == 202
     api.create_namespaced_job.assert_called_once()
@@ -290,9 +308,11 @@ def test_run_both_creates_the_job_and_starts_the_chain():
 def test_run_both_rejects_when_an_export_is_already_running():
     _reset_state()
     api = _mock_api([_job("busy", T1, active=1)])
-    with patch.object(web, "batch_api", return_value=api), \
-         patch.object(web.github_sync, "configured", return_value=True), \
-         patch.object(web, "threading") as threading_mod:
+    with (
+        patch.object(web, "batch_api", return_value=api),
+        patch.object(web.github_sync, "configured", return_value=True),
+        patch.object(web, "threading") as threading_mod,
+    ):
         res = web.app.test_client().post("/api/run-both")
     assert res.status_code == 409
     api.create_namespaced_job.assert_not_called()

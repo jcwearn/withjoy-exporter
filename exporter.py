@@ -164,9 +164,7 @@ def _expand_tags(rows: list[list[str]]) -> list[list[str]]:
     if len(rows) < 2:
         return rows
     header = rows[0]
-    tags_idx = next(
-        (i for i, name in enumerate(header) if name.strip().lower() == "tags"), None
-    )
+    tags_idx = next((i for i, name in enumerate(header) if name.strip().lower() == "tags"), None)
     if tags_idx is None:
         return rows
 
@@ -217,9 +215,7 @@ def _select_columns(rows: list[list[str]], columns: list[str]) -> list[list[str]
 
     header[:] = list(columns)
     for row in rows[1:]:
-        row[:] = [
-            row[idx] if idx is not None and idx < len(row) else "" for idx in indices
-        ]
+        row[:] = [row[idx] if idx is not None and idx < len(row) else "" for idx in indices]
     return rows
 
 

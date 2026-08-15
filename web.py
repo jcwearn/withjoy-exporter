@@ -364,8 +364,13 @@ def chain_running() -> bool:
     return chain_state().get("state") in ("waiting-export", "dispatching")
 
 
-def run_chain(api, job_name: str, sleep=time.sleep, attempts: int = CHAIN_MAX_POLLS,
-              now: datetime | None = None) -> None:
+def run_chain(
+    api,
+    job_name: str,
+    sleep=time.sleep,
+    attempts: int = CHAIN_MAX_POLLS,
+    now: datetime | None = None,
+) -> None:
     """Wait for an export Job, then dispatch the schedule sync if it succeeded.
 
     Runs on a daemon thread so closing the browser tab doesn't abandon the
@@ -465,9 +470,7 @@ def api_run_both():
         job = create_export_job(api, datetime.now(UTC))
     except TriggerError as exc:
         return jsonify({"error": str(exc)}), exc.status
-    threading.Thread(
-        target=run_chain, args=(api, job.metadata.name), daemon=True
-    ).start()
+    threading.Thread(target=run_chain, args=(api, job.metadata.name), daemon=True).start()
     return jsonify({"job_name": job.metadata.name}), 202
 
 
