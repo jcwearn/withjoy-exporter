@@ -1,0 +1,34 @@
+name: CI
+
+# Calls the shared Python CI workflow in jcwearn/workflows, replacing the
+# `test` job that used to live in build-image.yml.
+#
+# Two things change beyond deduplication:
+#
+# 1. ruff check and ruff format --check now run. This repo had no linter at
+#    all before the ruff adoption; nothing was enforcing either.
+# 2. The interpreter is right. The job this replaces hardcoded
+#    python-version: "3.14", while the Dockerfile's base image ships 3.12.3 --
+#    so every green run verified an interpreter production never executes.
+#    .python-version is now the single source, and the shared workflow reads it.
+#
+# `push: [main]` is also new. build-image.yml is pull_request-only, so nothing
+# has ever checked main directly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    # Explicit even though `read` is all python-ci needs and all this account
+    # grants by default. A reusable workflow can only narrow what the caller
+    # granted, so the grant belongs here where it is visible.
+    permissions:
+      contents: read
+    # Renovate pins this to a digest on its next run, leaving `# v1` behind as
+    # the record of what to follow. Written as `@v1` with no trailing comment;
+    # the comment belongs on a digest, where it records which tag it came from.
+    uses: jcwearn/workflows/.github/workflows/python-ci.yaml@v1
