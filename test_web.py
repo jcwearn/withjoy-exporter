@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from kubernetes import client
@@ -42,8 +42,8 @@ def _cronjob(name="withjoy-exporter", namespace="withjoy-exporter"):
     )
 
 
-T1 = datetime(2026, 7, 1, 6, 0, tzinfo=timezone.utc)
-T2 = datetime(2026, 7, 2, 6, 0, tzinfo=timezone.utc)
+T1 = datetime(2026, 7, 1, 6, 0, tzinfo=UTC)
+T2 = datetime(2026, 7, 2, 6, 0, tzinfo=UTC)
 
 
 def test_summarize_no_jobs():
@@ -84,7 +84,7 @@ def test_active_job():
 
 
 def test_build_manual_job():
-    now = datetime(2026, 7, 3, 12, 30, 45, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 3, 12, 30, 45, tzinfo=UTC)
     job = web.build_manual_job(_cronjob(), now)
     assert job.metadata.name == "withjoy-exporter-manual-20260703123045"
     assert job.metadata.namespace == "withjoy-exporter"

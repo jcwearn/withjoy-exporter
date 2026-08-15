@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import jwt
@@ -30,7 +30,7 @@ def _key_pair():
 # Generating a key is slow enough to be worth doing once for the module.
 PRIVATE_PEM, PUBLIC_PEM = _key_pair()
 
-NOW = datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
 
 
 def _run(run_id=1, created="2026-07-01T12:00:00Z", status="completed", conclusion="success"):
@@ -102,10 +102,12 @@ def test_dispatch_accepts_204():
 
 
 def test_dispatch_rejects_unexpected_status():
-    with patch.object(github_sync, "installation_token", return_value="t"), \
-         patch.object(github_sync, "_request", return_value=(200, {})):
-        with pytest.raises(github_sync.GitHubError, match="Unexpected dispatch status"):
-            github_sync.dispatch_workflow()
+    with (
+        patch.object(github_sync, "installation_token", return_value="t"),
+        patch.object(github_sync, "_request", return_value=(200, {})),
+        pytest.raises(github_sync.GitHubError, match="Unexpected dispatch status"),
+    ):
+        github_sync.dispatch_workflow()
 
 
 def test_find_run_ignores_runs_older_than_the_dispatch():
