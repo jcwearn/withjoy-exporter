@@ -22,4 +22,4 @@ on:
 
 jobs:
   check:
-    uses: jcwearn/workflows/.github/workflows/require-release-label.yaml@c9e49bd4c2226fa829a0179277df707b4585ce9e # v1
+    uses: jcwearn/workflows/.github/workflows/require-release-label.yaml@8c9f2690f495be5546bbef78c555345e464cc593 # v1
