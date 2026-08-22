@@ -29,4 +29,4 @@ jobs:
     # Renovate pins this to a digest on its next run, leaving `# v1` behind as
     # the record of what to follow. Written as `@v1` with no trailing comment;
     # the comment belongs on a digest, where it records which tag it came from.
-    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@c9e49bd4c2226fa829a0179277df707b4585ce9e # v1
+    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@8c9f2690f495be5546bbef78c555345e464cc593 # v1
