@@ -31,4 +31,4 @@ jobs:
     # Renovate pins this to a digest on its next run, leaving `# v1` behind as
     # the record of what to follow. Written as `@v1` with no trailing comment;
     # the comment belongs on a digest, where it records which tag it came from.
-    uses: jcwearn/workflows/.github/workflows/python-ci.yaml@38ebe6d5c8e93a718b80e6013f782a141fe2ac20 # v1
+    uses: jcwearn/workflows/.github/workflows/python-ci.yaml@c14d136b89f9008a5602dbf6a7c02b16562d0a62 # v1
