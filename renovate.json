@@ -4,8 +4,10 @@
   "addLabels": ["release:patch"],
   "packageRules": [
     {
+      "description": "The pip package and the base image must move together: the library looks for the browser build its own version shipped with, and the image only carries its own. The shared preset already holds PyPI updates for three days (security:minimumReleaseAgePypi); without the same gate on the image, the Docker half of this group goes alone during that window -- which is how v0.4.21 shipped a 1.63 image with a 1.62 library and every run failed at browser launch.",
       "matchDepNames": ["playwright", "mcr.microsoft.com/playwright/python"],
-      "groupName": "playwright"
+      "groupName": "playwright",
+      "minimumReleaseAge": "3 days"
     }
   ]
 }
