@@ -210,17 +210,27 @@ def _iso(ts) -> str | None:
     return ts.isoformat() if ts else None
 
 
+def job_state(job) -> str:
+    """Read a Job's outcome from its conditions.
+
+    `status.failed` counts failed pods, not a failed Job: with a backoffLimit
+    the first pod can die (e.g. Auth0 throttling the login) while a retry pod
+    goes on to succeed. Only the Failed condition means k8s has given up.
+    """
+    for cond in job.status.conditions or []:
+        if cond.status == "True" and cond.type == "Complete":
+            return "succeeded"
+        if cond.status == "True" and cond.type == "Failed":
+            return "failed"
+    return "succeeded" if job.status.succeeded else "running"
+
+
 def summarize_jobs(jobs: list) -> dict:
     if not jobs:
         return {"state": "none"}
     latest = max(jobs, key=lambda j: j.metadata.creation_timestamp)
     status = latest.status
-    if status.succeeded:
-        state = "succeeded"
-    elif status.failed:
-        state = "failed"
-    else:
-        state = "running"
+    state = job_state(latest)
     labels = latest.metadata.labels or {}
     return {
         "state": state,
@@ -391,9 +401,10 @@ def run_chain(
                 error=f"Could not read Job {job_name}: {exc.reason}",
             )
             return
-        if job.status.succeeded:
+        state = job_state(job)
+        if state == "succeeded":
             break
-        if job.status.failed:
+        if state == "failed":
             _set_chain(
                 state="aborted",
                 job_name=job_name,

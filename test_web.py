@@ -12,6 +12,7 @@ def _job(
     active=None,
     succeeded=None,
     failed=None,
+    conditions=None,
     labels=None,
     start_time=None,
     completion_time=None,
@@ -22,6 +23,7 @@ def _job(
             active=active,
             succeeded=succeeded,
             failed=failed,
+            conditions=conditions,
             start_time=start_time or created,
             completion_time=completion_time,
         ),
@@ -50,6 +52,7 @@ def _cronjob(name="withjoy-exporter", namespace="withjoy-exporter"):
 
 T1 = datetime(2026, 7, 1, 6, 0, tzinfo=UTC)
 T2 = datetime(2026, 7, 2, 6, 0, tzinfo=UTC)
+FAILED = [client.V1JobCondition(type="Failed", status="True")]
 
 
 def test_summarize_no_jobs():
@@ -59,7 +62,7 @@ def test_summarize_no_jobs():
 def test_summarize_picks_newest_job():
     jobs = [
         _job("old", T1, succeeded=1, completion_time=T1),
-        _job("new", T2, failed=1),
+        _job("new", T2, failed=1, conditions=FAILED),
     ]
     summary = web.summarize_jobs(jobs)
     assert summary["job_name"] == "new"
@@ -80,6 +83,11 @@ def test_summarize_running():
     assert summary["state"] == "running"
     assert summary["manual"] is False
     assert summary["finished_at"] is None
+
+
+def test_summarize_failed_pod_with_retry_pending_is_running():
+    summary = web.summarize_jobs([_job("run", T1, active=1, failed=1)])
+    assert summary["state"] == "running"
 
 
 def test_active_job():
@@ -234,7 +242,7 @@ def test_schedule_state_refetches_a_running_run():
 def test_chain_aborts_without_dispatching_when_the_export_fails():
     _reset_state()
     api = MagicMock()
-    api.read_namespaced_job.return_value = _job("run", T1, failed=1)
+    api.read_namespaced_job.return_value = _job("run", T1, failed=1, conditions=FAILED)
     with patch.object(web.github_sync, "dispatch_workflow") as dispatch:
         web.run_chain(api, "run", sleep=lambda _: None)
     dispatch.assert_not_called()
@@ -257,6 +265,21 @@ def test_chain_waits_for_the_export_then_dispatches():
     dispatch.assert_called_once()
     assert web.chain_state()["state"] == "done"
     assert api.read_namespaced_job.call_count == 3
+    _reset_state()
+
+
+def test_chain_keeps_waiting_through_a_failed_pod_that_k8s_retries():
+    _reset_state()
+    api = MagicMock()
+    api.read_namespaced_job.side_effect = [
+        _job("run", T1, failed=1),
+        _job("run", T1, active=1, failed=1),
+        _job("run", T1, succeeded=1, failed=1),
+    ]
+    with patch.object(web.github_sync, "dispatch_workflow") as dispatch:
+        web.run_chain(api, "run", sleep=lambda _: None)
+    dispatch.assert_called_once()
+    assert web.chain_state()["state"] == "done"
     _reset_state()
 
 

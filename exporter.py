@@ -17,6 +17,8 @@ LOGIN_URL = "https://withjoy.com/login"
 LOGIN_NAV_TIMEOUT_MS = 60_000
 LOGIN_NAV_ATTEMPTS = 3
 LOGIN_NAV_BACKOFF_SECONDS = 5
+LOGIN_THROTTLE_BACKOFF_SECONDS = (30, 120, 300)
+THROTTLED_MARKER = "error=too_many_attempts"
 DATE_TAB_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -25,6 +27,10 @@ class ExporterError(RuntimeError):
 
 
 class LoginFailed(ExporterError):
+    pass
+
+
+class RateLimited(LoginFailed):
     pass
 
 
@@ -74,40 +80,76 @@ def _goto_login(page, sleep=time.sleep, attempts: int = LOGIN_NAV_ATTEMPTS) -> N
             sleep(LOGIN_NAV_BACKOFF_SECONDS)
 
 
+def _login(page, username: str, password: str) -> None:
+    _goto_login(page)
+
+    email_input = page.locator(
+        'input[type="email"], input[name="email"], input[name="username"]'
+    ).first
+    email_input.wait_for(state="visible", timeout=15_000)
+    email_input.fill(username)
+
+    password_input = page.locator('input[type="password"]').first
+    password_input.wait_for(state="visible", timeout=10_000)
+    password_input.fill(password)
+
+    try:
+        with page.expect_navigation(timeout=25_000, wait_until="networkidle"):
+            password_input.press("Enter")
+    except PlaywrightTimeout:
+        pass
+
+    if THROTTLED_MARKER in page.url:
+        _dump_debug(page, "login_throttled")
+        raise RateLimited(
+            f"Auth0 is throttling logins (url={page.url}). "
+            "This is WithJoy's rate limit, not a credentials problem; it clears on its own."
+        )
+
+    if "auth0" in page.url or "/login" in page.url:
+        _dump_debug(page, "login_failed")
+        raise LoginFailed(
+            f"Login did not leave the auth flow (url={page.url}). "
+            "Check WITHJOY_USERNAME / WITHJOY_PASSWORD. "
+            "If MFA is enabled, disable it for this script. "
+            "If Auth0 is flagging the headless run, see the debug screenshot."
+        )
+
+
+def _login_with_retry(
+    browser, username: str, password: str, sleep=time.sleep, backoff=LOGIN_THROTTLE_BACKOFF_SECONDS
+):
+    """Log in, backing off and retrying while Auth0 reports too_many_attempts.
+
+    The throttle is transient (a pod retry 15s later has succeeded), so wait
+    it out in-process with a growing delay rather than failing the run. Each
+    attempt gets a fresh context so no half-finished Auth0 session carries
+    over. Other login failures (bad credentials, MFA) are not retried.
+    """
+    for attempt in range(len(backoff) + 1):
+        context = browser.new_context(accept_downloads=True)
+        page = context.new_page()
+        try:
+            _login(page, username, password)
+            return page
+        except RateLimited:
+            context.close()
+            if attempt == len(backoff):
+                raise
+            print(
+                f"login throttled by Auth0 (attempt {attempt + 1}/{len(backoff) + 1}); "
+                f"retrying in {backoff[attempt]}s",
+                file=sys.stderr,
+            )
+            sleep(backoff[attempt])
+
+
 def download_csv(username: str, password: str, guest_list_url: str) -> bytes:
     debug = bool(os.environ.get("DEBUG"))
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
-            context = browser.new_context(accept_downloads=True)
-            page = context.new_page()
-
-            _goto_login(page)
-
-            email_input = page.locator(
-                'input[type="email"], input[name="email"], input[name="username"]'
-            ).first
-            email_input.wait_for(state="visible", timeout=15_000)
-            email_input.fill(username)
-
-            password_input = page.locator('input[type="password"]').first
-            password_input.wait_for(state="visible", timeout=10_000)
-            password_input.fill(password)
-
-            try:
-                with page.expect_navigation(timeout=25_000, wait_until="networkidle"):
-                    password_input.press("Enter")
-            except PlaywrightTimeout:
-                pass
-
-            if "auth0" in page.url or "/login" in page.url:
-                _dump_debug(page, "login_failed")
-                raise LoginFailed(
-                    f"Login did not leave the auth flow (url={page.url}). "
-                    "Check WITHJOY_USERNAME / WITHJOY_PASSWORD. "
-                    "If MFA is enabled, disable it for this script. "
-                    "If Auth0 is flagging the headless run, see the debug screenshot."
-                )
+            page = _login_with_retry(browser, username, password)
 
             try:
                 page.goto(guest_list_url, wait_until="networkidle", timeout=60_000)
