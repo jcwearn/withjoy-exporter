@@ -211,3 +211,64 @@ def test_goto_login_reraises_after_last_attempt():
         exporter._goto_login(page, sleep=slept.append, attempts=3)
     assert len(page.calls) == 3
     assert slept == [exporter.LOGIN_NAV_BACKOFF_SECONDS] * 2
+
+
+class _FakeContext:
+    def __init__(self):
+        self.closed = False
+
+    def new_page(self):
+        return object()
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeBrowser:
+    def __init__(self):
+        self.contexts = []
+
+    def new_context(self, **kwargs):
+        self.contexts.append(_FakeContext())
+        return self.contexts[-1]
+
+
+def _scripted_login(monkeypatch, outcomes):
+    """Patch _login to raise each queued exception in turn, then succeed."""
+    calls = []
+
+    def fake_login(page, username, password):
+        calls.append(page)
+        if outcomes:
+            raise outcomes.pop(0)
+
+    monkeypatch.setattr(exporter, "_login", fake_login)
+    return calls
+
+
+def test_login_with_retry_backs_off_on_throttle_then_succeeds(monkeypatch):
+    calls = _scripted_login(monkeypatch, [exporter.RateLimited("t"), exporter.RateLimited("t")])
+    browser, slept = _FakeBrowser(), []
+    page = exporter._login_with_retry(browser, "u", "p", sleep=slept.append, backoff=(1, 2, 3))
+    assert page is calls[-1]
+    assert len(calls) == 3
+    assert slept == [1, 2]
+    assert [c.closed for c in browser.contexts] == [True, True, False]
+
+
+def test_login_with_retry_reraises_after_last_attempt(monkeypatch):
+    calls = _scripted_login(monkeypatch, [exporter.RateLimited("t")] * 3)
+    slept = []
+    with pytest.raises(exporter.RateLimited):
+        exporter._login_with_retry(_FakeBrowser(), "u", "p", sleep=slept.append, backoff=(1, 2))
+    assert len(calls) == 3
+    assert slept == [1, 2]
+
+
+def test_login_with_retry_does_not_retry_other_login_failures(monkeypatch):
+    calls = _scripted_login(monkeypatch, [exporter.LoginFailed("bad password")])
+    slept = []
+    with pytest.raises(exporter.LoginFailed):
+        exporter._login_with_retry(_FakeBrowser(), "u", "p", sleep=slept.append, backoff=(1, 2))
+    assert len(calls) == 1
+    assert slept == []
