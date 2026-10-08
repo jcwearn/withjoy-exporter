@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 import re
 import sys
@@ -10,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import gspread
 from gspread.utils import fill_gaps
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
@@ -144,23 +146,75 @@ def _login_with_retry(
             sleep(backoff[attempt])
 
 
-def download_csv(username: str, password: str, guest_list_url: str) -> bytes:
+def _in_auth_flow(url: str) -> bool:
+    return "auth0" in url or "/login" in url
+
+
+def _goto_guest_list(page, guest_list_url: str) -> None:
+    try:
+        page.goto(guest_list_url, wait_until="networkidle", timeout=60_000)
+    except PlaywrightTimeout:
+        pass
+
+
+def _open_session(
+    browser, state_path: str | None, username: str, password: str, guest_list_url: str
+):
+    """Return a page on the guest list, reusing the saved session when it still works.
+
+    Every fresh login counts toward Auth0's too_many_attempts throttle, so a
+    session saved by the previous run is tried first. Anything wrong with it
+    (missing, unreadable, expired) falls back to a normal login.
+    """
+    if state_path and os.path.exists(state_path):
+        context = None
+        try:
+            context = browser.new_context(accept_downloads=True, storage_state=state_path)
+            page = context.new_page()
+            _goto_guest_list(page, guest_list_url)
+            if not _in_auth_flow(page.url):
+                print("reused saved session", file=sys.stderr)
+                return page
+            print("saved session expired; logging in", file=sys.stderr)
+        except (PlaywrightError, OSError, ValueError) as exc:
+            print(f"could not reuse saved session ({exc}); logging in", file=sys.stderr)
+        if context is not None:
+            context.close()
+
+    page = _login_with_retry(browser, username, password)
+    _goto_guest_list(page, guest_list_url)
+    if _in_auth_flow(page.url):
+        _dump_debug(page, "session_lost")
+        raise LoginFailed(f"Navigating to the guest list bounced back to login (url={page.url}).")
+    return page
+
+
+def _save_session(context, path: str) -> None:
+    """Persist the session for the next run; failing to save never fails the export.
+
+    indexed_db=True matters: WithJoy's Firebase Auth tokens live in IndexedDB,
+    not cookies. The file holds live tokens, so it is created 0600 and swapped
+    into place atomically so a crash can't leave a truncated file behind.
+    """
+    tmp = f"{path}.tmp"
+    try:
+        state = context.storage_state(indexed_db=True)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, path)
+    except (PlaywrightError, OSError) as exc:
+        print(f"could not save session state ({exc})", file=sys.stderr)
+
+
+def download_csv(
+    username: str, password: str, guest_list_url: str, state_path: str | None = None
+) -> bytes:
     debug = bool(os.environ.get("DEBUG"))
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
-            page = _login_with_retry(browser, username, password)
-
-            try:
-                page.goto(guest_list_url, wait_until="networkidle", timeout=60_000)
-            except PlaywrightTimeout:
-                pass
-
-            if "auth0" in page.url or "/login" in page.url:
-                _dump_debug(page, "session_lost")
-                raise LoginFailed(
-                    f"Navigating to the guest list bounced back to login (url={page.url})."
-                )
+            page = _open_session(browser, state_path, username, password, guest_list_url)
 
             if debug:
                 _dump_debug(page, "guest_list_loaded")
@@ -178,7 +232,10 @@ def download_csv(username: str, password: str, guest_list_url: str) -> bytes:
             download = download_info.value
 
             tmp_path = Path(download.path())
-            return tmp_path.read_bytes()
+            data = tmp_path.read_bytes()
+            if state_path:
+                _save_session(page.context, state_path)
+            return data
         finally:
             browser.close()
 
@@ -347,8 +404,9 @@ def main() -> int:
         timezone = os.environ.get("TIMEZONE", "America/New_York")
         keep_days = int(os.environ.get("HISTORY_KEEP_DAYS", "5"))
         columns = _parse_columns(os.environ.get("EXPORT_COLUMNS", ""))
+        state_path = os.environ.get("SESSION_STATE_PATH") or None
 
-        csv_bytes = download_csv(username, password, guest_list_url)
+        csv_bytes = download_csv(username, password, guest_list_url, state_path)
         guest_count, today, pruned, changed = upload_to_sheets(
             csv_bytes, sheet_id, credentials_path, latest_tab, timezone, keep_days, columns
         )

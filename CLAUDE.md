@@ -14,7 +14,8 @@ Three source files, no package, no Makefile.
 
 `exporter.py` — the export itself (default ENTRYPOINT):
 - `main()` — env validation + orchestration
-- `download_csv()` — Playwright login + export-button click + CSV byte capture
+- `download_csv()` — Playwright session + export-button click + CSV byte capture
+- `_open_session()` / `_save_session()` — reuse the session saved at `SESSION_STATE_PATH`, falling back to a fresh login
 - `_select_columns()` — restricts/reorders the CSV's columns to the `EXPORT_COLUMNS` list (`_parse_columns()` splits it on commas or newlines); no-op when unset
 - `_expand_tags()` — appends one `<tag> (tag)` column per unique tag (alphabetical, int 1/0); finds the tags column by header name
 - `upload_to_sheets()` — orchestrates `_write_rows` for `latest` and today's tab, then prunes
@@ -69,6 +70,7 @@ pytest
 - **MFA on the WithJoy bot account will hang the run.** The `LoginFailed` error message in `exporter.py` already says this — keep it.
 - **Keep `ignore-error=true` on `cache-to: type=gha`.** With `mode=max`, BuildKit re-reserves a cache entry for every layer on every run. The `refs/heads/main` cache scope holds blobs that every build reads (so they never age out), and GitHub's cache service treats re-reserving an existing key as a hard error — which cancels the in-flight image push. Without the flag, `release.yml` creates a git tag but pushes no image and no GitHub Release. Don't remove it.
 - **Auth0 `too_many_attempts` is transient throttling, not bad credentials.** WithJoy's Auth0 tenant sometimes bounces a login to `?error=too_many_attempts`; a retry seconds to minutes later succeeds. `_login_with_retry()` raises `RateLimited` and backs off in-process (`LOGIN_THROTTLE_BACKOFF_SECONDS`) with a fresh browser context each time. Only throttling is retried; real login failures fail fast. Relatedly, `web.py` reads Job outcome from `status.conditions` via `job_state()`: `status.failed` counts failed *pods* and goes to 1 while the Job's `backoffLimit` retry is still running, so treating it as terminal reported throttled-then-recovered runs as failed and aborted Run-both.
+- **The saved session (`SESSION_STATE_PATH`) must include IndexedDB.** WithJoy signs in through Auth0 and then Firebase Auth, which keeps its tokens in IndexedDB, so `_save_session()` calls `storage_state(indexed_db=True)`; cookies alone won't restore the session. `_open_session()` tries the saved state first and falls back to `_login_with_retry()` whenever it's missing, unreadable or bounced to login, so an expired session is never an error. The file holds live tokens: it's written `0600` via a temp file + `os.replace`.
 - **`.har` files in the repo root** are local debug captures (one is ~23MB). They're not source. Leave them alone; they're gitignored.
 - **`workflow_dispatch` answers `204` with an empty body**, so there is no run id to correlate on. `github_sync.find_run()` matches the newest run created at or after the dispatch time, with five seconds of slack for clock skew between the pod and GitHub. Don't tighten that slack: a run stamped a moment before our own clock read would be missed forever, and the page would sit on "waiting for the run to appear".
 - **`schedule_state()` caches deliberately.** The page polls every 3s; hitting the GitHub API twice a tick would burn the App's hourly rate limit on an idle tab. Idle state is re-checked at most once a minute (`IDLE_REFRESH_SECONDS`), while a run in flight is never served from cache.

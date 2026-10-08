@@ -123,6 +123,11 @@ docker run --rm \
 | `DEBUG`                           | no       | unset                                  | When set, dumps screenshots/HTML at each step to `/tmp/debug` |
 | `DEBUG_OUTPUT_DIR`                | no       | `/tmp/debug`                           | Where debug artifacts are written on failure                 |
 | `EXPORT_COLUMNS`                  | no       | unset                                  | Pins which CSV columns are taken; unset takes everything     |
+| `SESSION_STATE_PATH`              | no       | unset                                  | File to save the browser session in and reuse next run (point it at a persistent volume); unset logs in fresh every run |
+
+### Reusing the login session with `SESSION_STATE_PATH`
+
+Every fresh login counts toward WithJoy's Auth0 rate limit (`too_many_attempts`). With `SESSION_STATE_PATH` set, a successful run saves its browser session (cookies, localStorage and IndexedDB) to that file, and the next run tries it before logging in. If the file is missing or unreadable, or the session has expired, the run logs in with `WITHJOY_USERNAME` / `WITHJOY_PASSWORD` as usual and saves the new session — nothing ever needs refreshing by hand. The file holds live session tokens, so it's written `0600`; keep it on a volume only the exporter mounts.
 
 ### Pinning columns with `EXPORT_COLUMNS`
 
