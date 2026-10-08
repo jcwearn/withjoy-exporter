@@ -29,7 +29,7 @@ Three source files, no package, no Makefile.
 - `POST /api/sync-schedule` — dispatches the wedding-site workflow (503 unconfigured, 502 on GitHub errors)
 - `POST /api/run-both` — creates the Job, then `run_chain` on a daemon thread dispatches the workflow **only if the export succeeded** (409 if a chain is already in flight)
 - Config: `NAMESPACE`, `CRONJOB_NAME` (both default `withjoy-exporter`), `PORT` (8080), plus the `GITHUB_*` vars listed in `README.md`
-- Needs a ServiceAccount with `get` on the CronJob and `get`/`list`/`create` on Jobs (`get` on Jobs is what `run_chain` polls with)
+- Needs a ServiceAccount with `get` on the CronJob and `get`/`list`/`create` on Jobs (`get` on Jobs is what `run_chain` polls with), plus `get`/`list` on Pods: `run_chain` reads the export's termination message (`changed`/`unchanged`, written by `exporter._report_result()`) and skips the dispatch on `unchanged`. Any failure to read it dispatches, so a missing rule degrades to the old behaviour
 
 `github_sync.py` — GitHub App client for the schedule sync. Signs an App JWT, exchanges it for a cached installation token, dispatches the workflow, and summarizes runs into the same `running`/`succeeded`/`failed` vocabulary the Job side uses. Flask-free so it tests standalone.
 

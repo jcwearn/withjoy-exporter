@@ -386,3 +386,16 @@ def test_save_session_writes_private_file_with_indexed_db(tmp_path):
 def test_save_session_failure_does_not_raise(tmp_path):
     context = _SessionContext(GUEST_LIST, state={})
     exporter._save_session(context, str(tmp_path / "no-such-dir" / "state.json"))
+
+
+@pytest.mark.parametrize(("changed", "expected"), [(True, "changed"), (False, "unchanged")])
+def test_report_result_writes_the_termination_message(tmp_path, monkeypatch, changed, expected):
+    path = tmp_path / "termination-log"
+    monkeypatch.setattr(exporter, "TERMINATION_LOG_PATH", str(path))
+    exporter._report_result(changed)
+    assert path.read_text() == expected
+
+
+def test_report_result_is_silent_outside_kubernetes(tmp_path, monkeypatch):
+    monkeypatch.setattr(exporter, "TERMINATION_LOG_PATH", str(tmp_path / "missing" / "log"))
+    exporter._report_result(True)
