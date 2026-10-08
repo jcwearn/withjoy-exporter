@@ -22,6 +22,9 @@ LOGIN_NAV_BACKOFF_SECONDS = 5
 LOGIN_THROTTLE_BACKOFF_SECONDS = (30, 120, 300)
 THROTTLED_MARKER = "error=too_many_attempts"
 DATE_TAB_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Kubernetes' default terminationMessagePath. web.py's "Run both" reads it back
+# off the finished pod to skip the schedule sync when the sheet didn't change.
+TERMINATION_LOG_PATH = "/dev/termination-log"
 
 
 class ExporterError(RuntimeError):
@@ -391,6 +394,20 @@ def upload_to_sheets(
     return guest_count, today, pruned, True
 
 
+def _report_result(changed: bool) -> None:
+    """Leave `changed` / `unchanged` where the Job's pod status will carry it.
+
+    Best effort: outside Kubernetes (a local `docker run`) the file isn't
+    there, and a missing report only means "Run both" dispatches the sync
+    anyway, which is what it did before this existed.
+    """
+    try:
+        with open(TERMINATION_LOG_PATH, "w") as f:
+            f.write("changed" if changed else "unchanged")
+    except OSError:
+        pass
+
+
 def main() -> int:
     try:
         username = _require("WITHJOY_USERNAME")
@@ -417,6 +434,7 @@ def main() -> int:
             )
         else:
             print(f"No changes since last run ({guest_count} guests). Skipped sheet update.")
+        _report_result(changed)
         return 0
     except ExporterError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

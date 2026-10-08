@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from kubernetes import client
+from kubernetes.client.rest import ApiException
 
 import web
 
@@ -358,3 +359,79 @@ def test_run_both_requires_configuration():
     with patch.object(web.github_sync, "configured", return_value=False):
         res = web.app.test_client().post("/api/run-both")
     assert res.status_code == 503
+
+
+def _pod(exit_code=0, message=None):
+    return client.V1Pod(
+        status=client.V1PodStatus(
+            container_statuses=[
+                client.V1ContainerStatus(
+                    name="exporter",
+                    image="img",
+                    image_id="",
+                    ready=False,
+                    restart_count=0,
+                    state=client.V1ContainerState(
+                        terminated=client.V1ContainerStateTerminated(
+                            exit_code=exit_code, message=message
+                        )
+                    ),
+                )
+            ]
+        )
+    )
+
+
+def _run_chain_with_pods(pods=None, error=None):
+    api = MagicMock()
+    api.read_namespaced_job.return_value = _job("run", T1, succeeded=1)
+    core = MagicMock()
+    if error:
+        core.list_namespaced_pod.side_effect = error
+    else:
+        core.list_namespaced_pod.return_value = client.V1PodList(items=pods)
+    with patch.object(web.github_sync, "dispatch_workflow") as dispatch:
+        web.run_chain(api, "run", core=core, sleep=lambda _: None)
+    return dispatch, core
+
+
+def test_chain_skips_the_sync_when_the_export_reports_no_change():
+    _reset_state()
+    dispatch, core = _run_chain_with_pods([_pod(message="unchanged")])
+    dispatch.assert_not_called()
+    assert web.chain_state()["state"] == "done-unchanged"
+    assert core.list_namespaced_pod.call_args.kwargs["label_selector"] == "job-name=run"
+    _reset_state()
+
+
+def test_chain_reads_the_succeeded_pod_beside_a_retried_one():
+    _reset_state()
+    dispatch, _ = _run_chain_with_pods([_pod(exit_code=1), _pod(message="unchanged\n")])
+    dispatch.assert_not_called()
+    assert web.chain_state()["state"] == "done-unchanged"
+    _reset_state()
+
+
+def test_chain_dispatches_when_the_export_reports_a_change():
+    _reset_state()
+    dispatch, _ = _run_chain_with_pods([_pod(message="changed")])
+    dispatch.assert_called_once()
+    assert web.chain_state()["state"] == "done"
+    _reset_state()
+
+
+def test_chain_dispatches_when_the_export_reports_nothing():
+    # An image from before the termination message existed.
+    _reset_state()
+    dispatch, _ = _run_chain_with_pods([_pod(message=None)])
+    dispatch.assert_called_once()
+    _reset_state()
+
+
+def test_chain_dispatches_when_pods_cannot_be_read():
+    # The pods RBAC rule not deployed yet.
+    _reset_state()
+    dispatch, _ = _run_chain_with_pods(error=ApiException(status=403, reason="Forbidden"))
+    dispatch.assert_called_once()
+    assert web.chain_state()["state"] == "done"
+    _reset_state()

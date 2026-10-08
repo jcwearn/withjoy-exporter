@@ -14,9 +14,11 @@ NAMESPACE = os.environ.get("NAMESPACE", "withjoy-exporter")
 CRONJOB_NAME = os.environ.get("CRONJOB_NAME", "withjoy-exporter")
 
 # How long the chain will wait for an export before giving up. The CronJob's own
-# activeDeadlineSeconds is 1800, so this outlasts any run k8s would allow.
-CHAIN_POLL_SECONDS = 5
-CHAIN_MAX_POLLS = 400
+# activeDeadlineSeconds is 1800, so this outlasts any run k8s would allow. The
+# poll was 5s, which put up to 5s of dead air between a ~16s export and the
+# dispatch; a get on one Job a second is nothing to the API server.
+CHAIN_POLL_SECONDS = 1
+CHAIN_MAX_POLLS = 2000
 
 # An idle workflow is re-checked at most this often, so a tab left open
 # overnight doesn't burn the App's hourly rate limit.
@@ -91,6 +93,7 @@ const CHAIN_TEXT = {
   "waiting-export": "Running both — waiting for the export to finish…",
   "dispatching": "Running both — export succeeded, starting the schedule sync…",
   "done": "Ran both — the export finished and the schedule sync was started.",
+  "done-unchanged": "Ran both — the sheet hadn't changed, so the schedule sync was skipped. Use Sync schedule to force one.",
   "aborted": "Ran both — stopped before the schedule sync.",
 };
 
@@ -204,6 +207,19 @@ def batch_api() -> client.BatchV1Api:
             config.load_kube_config()
         _batch = client.BatchV1Api()
     return _batch
+
+
+_core = None
+
+
+def core_api() -> client.CoreV1Api:
+    """Pods, for reading the export's termination message. Config is loaded by
+    batch_api(), which every caller has already gone through."""
+    global _core
+    if _core is None:
+        batch_api()
+        _core = client.CoreV1Api()
+    return _core
 
 
 def _iso(ts) -> str | None:
@@ -374,9 +390,32 @@ def chain_running() -> bool:
     return chain_state().get("state") in ("waiting-export", "dispatching")
 
 
+def export_result(core, job_name: str) -> str | None:
+    """What the export reported in its termination message, if anything.
+
+    exporter.py writes `changed` or `unchanged` to /dev/termination-log. Read
+    from whichever of the Job's pods exited 0, since a backoffLimit retry can
+    leave a failed pod beside it. Any failure to read it -- no RBAC on pods
+    yet, an older image that writes nothing -- returns None, and the caller
+    treats None as "changed": a sync that turns out to be a no-op costs a
+    minute, a skipped one that mattered leaves the site stale until morning.
+    """
+    try:
+        pods = core.list_namespaced_pod(NAMESPACE, label_selector=f"job-name={job_name}")
+    except ApiException:
+        return None
+    for pod in pods.items or []:
+        for status in pod.status.container_statuses or []:
+            terminated = status.state.terminated if status.state else None
+            if terminated and terminated.exit_code == 0:
+                return (terminated.message or "").strip() or None
+    return None
+
+
 def run_chain(
     api,
     job_name: str,
+    core=None,
     sleep=time.sleep,
     attempts: int = CHAIN_MAX_POLLS,
     now: datetime | None = None,
@@ -388,7 +427,11 @@ def run_chain(
     page shows the chain as idle rather than pretending it is still going.
 
     A failed export deliberately does not dispatch: the workflow would rebuild
-    the schedule from a stale or half-written sheet.
+    the schedule from a stale or half-written sheet. Neither does one that
+    reports the sheet unchanged -- the sync would rebuild an identical index
+    and commit nothing, after the person pressing the button had waited a
+    minute and a half for it. `core` is how that report is read; without it
+    the chain always dispatches.
     """
     _set_chain(state="waiting-export", job_name=job_name)
     for attempt in range(attempts):
@@ -419,6 +462,10 @@ def run_chain(
             )
             return
         sleep(CHAIN_POLL_SECONDS)
+
+    if core is not None and export_result(core, job_name) == "unchanged":
+        _set_chain(state="done-unchanged", job_name=job_name)
+        return
 
     dispatched_at = now or datetime.now(UTC)
     _set_chain(state="dispatching", job_name=job_name)
@@ -481,7 +528,9 @@ def api_run_both():
         job = create_export_job(api, datetime.now(UTC))
     except TriggerError as exc:
         return jsonify({"error": str(exc)}), exc.status
-    threading.Thread(target=run_chain, args=(api, job.metadata.name), daemon=True).start()
+    threading.Thread(
+        target=run_chain, args=(api, job.metadata.name, core_api()), daemon=True
+    ).start()
     return jsonify({"job_name": job.metadata.name}), 202
 
 

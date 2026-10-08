@@ -157,7 +157,7 @@ Pull from any of those tags as a `CronJob` image. Mount the GCP service account 
 
 ## Manual trigger web UI
 
-The same image also ships `web.py`, a small Flask app that serves a trigger page for on-demand runs when running in Kubernetes. Run it as a separate `Deployment` with the container command overridden to `["python", "web.py"]` and a ServiceAccount that can `get` the CronJob and `get`/`list`/`create` Jobs in the namespace.
+The same image also ships `web.py`, a small Flask app that serves a trigger page for on-demand runs when running in Kubernetes. Run it as a separate `Deployment` with the container command overridden to `["python", "web.py"]` and a ServiceAccount that can `get` the CronJob and `get`/`list`/`create` Jobs in the namespace, plus `get`/`list` on Pods so "Run both" can skip the schedule sync when the export reports the sheet unchanged (without it, Run both always dispatches).
 
 It offers three actions:
 
