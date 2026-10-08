@@ -22,6 +22,9 @@ LOGIN_NAV_BACKOFF_SECONDS = 5
 LOGIN_THROTTLE_BACKOFF_SECONDS = (30, 120, 300)
 THROTTLED_MARKER = "error=too_many_attempts"
 DATE_TAB_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+EXPORT_BUTTON_RE = re.compile(r"Export\s+All\s+Guests", re.IGNORECASE)
+LOGIN_FORM_SELECTOR = 'input[type="email"], input[name="email"], input[name="username"]'
+GUEST_LIST_TIMEOUT_MS = 60_000
 # Kubernetes' default terminationMessagePath. web.py's "Run both" reads it back
 # off the finished pod to skip the schedule sync when the sheet didn't change.
 TERMINATION_LOG_PATH = "/dev/termination-log"
@@ -88,9 +91,7 @@ def _goto_login(page, sleep=time.sleep, attempts: int = LOGIN_NAV_ATTEMPTS) -> N
 def _login(page, username: str, password: str) -> None:
     _goto_login(page)
 
-    email_input = page.locator(
-        'input[type="email"], input[name="email"], input[name="username"]'
-    ).first
+    email_input = page.locator(LOGIN_FORM_SELECTOR).first
     email_input.wait_for(state="visible", timeout=15_000)
     email_input.fill(username)
 
@@ -154,8 +155,24 @@ def _in_auth_flow(url: str) -> bool:
 
 
 def _goto_guest_list(page, guest_list_url: str) -> None:
+    """Load the guest list and wait until it has visibly decided where it is.
+
+    This used to be goto(wait_until="networkidle"), which waits for half a
+    second with no network traffic. The guest list keeps polling, so it often
+    never got there: every run sat out the full 60s timeout, swallowed it, and
+    carried on -- 45 of a 63s export spent waiting for nothing. Instead, wait
+    for whichever the page settles on first: the export button (session good)
+    or the login form (session gone, so the caller logs in). Both are what the
+    callers actually check next.
+
+    Still swallows the timeout: the caller's own checks (the auth-flow URL, the
+    export button wait in download_csv) produce the real error and debug dump.
+    """
     try:
-        page.goto(guest_list_url, wait_until="networkidle", timeout=60_000)
+        page.goto(guest_list_url, wait_until="domcontentloaded", timeout=GUEST_LIST_TIMEOUT_MS)
+        page.get_by_text(EXPORT_BUTTON_RE).or_(page.locator(LOGIN_FORM_SELECTOR)).first.wait_for(
+            state="visible", timeout=GUEST_LIST_TIMEOUT_MS
+        )
     except PlaywrightTimeout:
         pass
 
@@ -222,8 +239,7 @@ def download_csv(
             if debug:
                 _dump_debug(page, "guest_list_loaded")
 
-            export_re = re.compile(r"Export\s+All\s+Guests", re.IGNORECASE)
-            export_button = page.get_by_text(export_re).first
+            export_button = page.get_by_text(EXPORT_BUTTON_RE).first
             try:
                 export_button.wait_for(state="visible", timeout=30_000)
             except PlaywrightTimeout:

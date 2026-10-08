@@ -279,16 +279,58 @@ def test_login_with_retry_does_not_retry_other_login_failures(monkeypatch):
 GUEST_LIST = "https://withjoy.com/edit/guests"
 
 
+class _Landmark:
+    """Stands in for the export-button-or-login-form locator."""
+
+    def __init__(self, times_out=False):
+        self.times_out = times_out
+        self.waits = []
+
+    def or_(self, other):
+        return self
+
+    @property
+    def first(self):
+        return self
+
+    def wait_for(self, **kwargs):
+        self.waits.append(kwargs)
+        if self.times_out:
+            raise PlaywrightTimeout("Locator.wait_for: Timeout 60000ms exceeded.")
+
+
 class _SessionPage:
     """A page whose goto lands on `lands_on` (the guest list, or a login bounce)."""
 
-    def __init__(self, context, lands_on):
+    def __init__(self, context, lands_on, landmark=None):
         self.context = context
         self.lands_on = lands_on
         self.url = "about:blank"
+        self.landmark = landmark or _Landmark()
+        self.gotos = []
 
     def goto(self, url, **kwargs):
+        self.gotos.append(kwargs)
         self.url = self.lands_on
+
+    def get_by_text(self, text):
+        return self.landmark
+
+    def locator(self, selector):
+        return self.landmark
+
+
+def test_goto_guest_list_waits_for_a_landmark_not_network_idle():
+    page = _SessionPage(None, GUEST_LIST)
+    exporter._goto_guest_list(page, GUEST_LIST)
+    assert page.gotos[0]["wait_until"] == "domcontentloaded"
+    assert page.landmark.waits == [{"state": "visible", "timeout": exporter.GUEST_LIST_TIMEOUT_MS}]
+
+
+def test_goto_guest_list_leaves_a_missing_landmark_to_the_caller():
+    page = _SessionPage(None, GUEST_LIST, landmark=_Landmark(times_out=True))
+    exporter._goto_guest_list(page, GUEST_LIST)
+    assert page.url == GUEST_LIST
 
 
 class _SessionContext(_FakeContext):
