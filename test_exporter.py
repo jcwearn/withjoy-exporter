@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
@@ -272,3 +274,115 @@ def test_login_with_retry_does_not_retry_other_login_failures(monkeypatch):
         exporter._login_with_retry(_FakeBrowser(), "u", "p", sleep=slept.append, backoff=(1, 2))
     assert len(calls) == 1
     assert slept == []
+
+
+GUEST_LIST = "https://withjoy.com/edit/guests"
+
+
+class _SessionPage:
+    """A page whose goto lands on `lands_on` (the guest list, or a login bounce)."""
+
+    def __init__(self, context, lands_on):
+        self.context = context
+        self.lands_on = lands_on
+        self.url = "about:blank"
+
+    def goto(self, url, **kwargs):
+        self.url = self.lands_on
+
+
+class _SessionContext(_FakeContext):
+    def __init__(self, lands_on, state=None):
+        super().__init__()
+        self.lands_on = lands_on
+        self.state = state
+
+    def new_page(self):
+        return _SessionPage(self, self.lands_on)
+
+    def storage_state(self, **kwargs):
+        self.storage_state_kwargs = kwargs
+        return self.state
+
+
+class _SessionBrowser:
+    def __init__(self, saved_lands_on=GUEST_LIST, load_error=None):
+        self.saved_lands_on = saved_lands_on
+        self.load_error = load_error
+        self.contexts = []
+
+    def new_context(self, **kwargs):
+        if "storage_state" in kwargs and self.load_error:
+            raise self.load_error
+        self.contexts.append(_SessionContext(self.saved_lands_on))
+        return self.contexts[-1]
+
+
+def _fake_fresh_login(monkeypatch):
+    """Patch _login_with_retry to return a logged-in page and record the call."""
+    logins = []
+
+    def fake(browser, username, password):
+        logins.append(username)
+        return _SessionPage(_SessionContext(GUEST_LIST), GUEST_LIST)
+
+    monkeypatch.setattr(exporter, "_login_with_retry", fake)
+    return logins
+
+
+def test_open_session_reuses_a_valid_saved_session(monkeypatch, tmp_path):
+    logins = _fake_fresh_login(monkeypatch)
+    state = tmp_path / "state.json"
+    state.write_text("{}")
+    page = exporter._open_session(_SessionBrowser(), str(state), "u", "p", GUEST_LIST)
+    assert page.url == GUEST_LIST
+    assert logins == []
+
+
+def test_open_session_logs_in_when_the_saved_session_expired(monkeypatch, tmp_path):
+    logins = _fake_fresh_login(monkeypatch)
+    state = tmp_path / "state.json"
+    state.write_text("{}")
+    browser = _SessionBrowser(saved_lands_on="https://auth.withjoy.com/login?state=x")
+    page = exporter._open_session(browser, str(state), "u", "p", GUEST_LIST)
+    assert page.url == GUEST_LIST
+    assert logins == ["u"]
+    assert browser.contexts[0].closed
+
+
+def test_open_session_logs_in_without_a_state_file(monkeypatch, tmp_path):
+    logins = _fake_fresh_login(monkeypatch)
+    browser = _SessionBrowser()
+    exporter._open_session(browser, str(tmp_path / "missing.json"), "u", "p", GUEST_LIST)
+    assert logins == ["u"]
+    assert browser.contexts == []
+
+
+def test_open_session_logs_in_when_the_state_file_is_unreadable(monkeypatch, tmp_path):
+    logins = _fake_fresh_login(monkeypatch)
+    state = tmp_path / "state.json"
+    state.write_text("not json")
+    browser = _SessionBrowser(load_error=ValueError("bad json"))
+    exporter._open_session(browser, str(state), "u", "p", GUEST_LIST)
+    assert logins == ["u"]
+
+
+def test_open_session_without_a_state_path_logs_in(monkeypatch):
+    logins = _fake_fresh_login(monkeypatch)
+    exporter._open_session(_SessionBrowser(), None, "u", "p", GUEST_LIST)
+    assert logins == ["u"]
+
+
+def test_save_session_writes_private_file_with_indexed_db(tmp_path):
+    context = _SessionContext(GUEST_LIST, state={"cookies": [], "origins": []})
+    path = tmp_path / "state.json"
+    exporter._save_session(context, str(path))
+    assert json.loads(path.read_text()) == {"cookies": [], "origins": []}
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert context.storage_state_kwargs == {"indexed_db": True}
+    assert not (tmp_path / "state.json.tmp").exists()
+
+
+def test_save_session_failure_does_not_raise(tmp_path):
+    context = _SessionContext(GUEST_LIST, state={})
+    exporter._save_session(context, str(tmp_path / "no-such-dir" / "state.json"))
