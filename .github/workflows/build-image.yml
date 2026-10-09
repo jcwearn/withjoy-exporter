@@ -26,7 +26,7 @@ jobs:
     # deliberately absent: nothing is pushed from a pull request.
     permissions:
       contents: read
-    # Renovate pins this to a digest on its next run, leaving `# v1` behind as
-    # the record of what to follow. Written as `@v1` with no trailing comment;
-    # the comment belongs on a digest, where it records which tag it came from.
-    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@5a87eda65ecf9ee48da24b1d2d8c5ac53c335aed # v1
+    # Renovate keeps this digest current and the comment naming its exact
+    # release. Never `# v1`: it goes stale at the next workflows release and
+    # fails zizmor's ref-version-mismatch audit.
+    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@5a87eda65ecf9ee48da24b1d2d8c5ac53c335aed # v1.8.4
