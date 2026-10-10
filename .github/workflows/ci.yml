@@ -31,4 +31,4 @@ jobs:
     # Renovate keeps this digest current and the comment naming its exact
     # release. Never `# v1`: it goes stale at the next workflows release and
     # fails zizmor's ref-version-mismatch audit.
-    uses: jcwearn/workflows/.github/workflows/python-ci.yaml@ebb8737fed6e23eb39a68f42cedf4d32dd9fb1f3 # v1.8.5
+    uses: jcwearn/workflows/.github/workflows/python-ci.yaml@fa13c66a7b05b058081c96b66a88bcdf71bd4706 # v1.8.6
