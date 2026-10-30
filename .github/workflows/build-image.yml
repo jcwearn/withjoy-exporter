@@ -29,4 +29,4 @@ jobs:
     # Renovate keeps this digest current and the comment naming its exact
     # release. Never `# v1`: it goes stale at the next workflows release and
     # fails zizmor's ref-version-mismatch audit.
-    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@d774bed1c00c7af3c2b87bec5e6502cf653f8cbf # v1.8.9
+    uses: jcwearn/workflows/.github/workflows/docker-build.yaml@5469d170f1b46420b16e4b6663823ac6e1bb29d7 # v1.8.10
