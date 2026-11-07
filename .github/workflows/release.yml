@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: write # git tag + GitHub Release
       packages: write # push to GHCR
-    uses: jcwearn/workflows/.github/workflows/release.yaml@5469d170f1b46420b16e4b6663823ac6e1bb29d7 # v1.8.10
+    uses: jcwearn/workflows/.github/workflows/release.yaml@9b02157df1a163571654257f72a3f524dde6f352 # v1.8.11
     with:
       image: ghcr.io/jcwearn/withjoy-exporter
       # Docker convention is no prefix, and ansible-runner publishes bare
