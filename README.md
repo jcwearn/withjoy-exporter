@@ -1,5 +1,12 @@
 # WithJoy Exporter
 
+> [!WARNING]
+> **Deprecated and unmaintained.** This project was retired in November 2026. Its job, exporting
+> the WithJoy guest list to a Google Sheet, is now done by a private wedding-planning app, and the
+> Kubernetes deployment that ran this image has been removed. The repository is archived and
+> read-only. Existing images stay on GHCR, but no new versions or dependency updates will be
+> published.
+
 [![Build Image](https://github.com/jcwearn/withjoy-exporter/actions/workflows/build-image.yml/badge.svg)](https://github.com/jcwearn/withjoy-exporter/actions/workflows/build-image.yml)
 [![Release](https://github.com/jcwearn/withjoy-exporter/actions/workflows/release.yml/badge.svg)](https://github.com/jcwearn/withjoy-exporter/actions/workflows/release.yml)
 
